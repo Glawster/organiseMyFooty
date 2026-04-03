@@ -1,49 +1,82 @@
-<<<<<<< HEAD
-# organiseMyWhatsApp
+# organiseMyFooty
 
-Python scaffolding for exporting WhatsApp poll attendance from WhatsApp Web.
+Python tool for exporting WhatsApp poll attendance from WhatsApp Web.
 
-## Files
+Automates collection of footy training/match poll responses from a WhatsApp group,
+exporting voter names and attendance counts to CSV files.
 
-- `exportAttendance.py` — CLI entry point
-- `whatsappAttendance.py` — browser automation and export pipeline
-- `attendanceConfig.py` — config helpers and month/date resolution
-- `selectors.py` — centralised selectors and heuristics
-- `__init__.py`
+## Source files
+
+- `src/exportAttendance.py` — CLI entry point
+- `src/whatsappAttendance.py` — browser automation and export pipeline
+- `src/attendanceConfig.py` — config helpers and month/date resolution
+- `src/whatsappSelectors.py` — centralised WhatsApp Web CSS/aria selectors
+- `src/__init__.py` — package initialisation
 
 ## Install
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install playwright
+pip install -r requirements.txt
 playwright install chromium
 ```
 
-## Example
+## Usage
+
+Run from the `src/` directory (or add `src/` to `PYTHONPATH`):
 
 ```bash
+cd src
 python exportAttendance.py \
-  --group "LLC" \
+  --group "My Footy Group" \
   --month 2026-03 \
-  --output ~/attendance/llc_2026_03 \
-  --user-data-dir ~/.local/share/organiseMyWhatsApp/profile
+  --output ~/attendance/footy_2026_03 \
+  --user-data-dir ~/.local/share/organiseMyFooty/profile
 ```
 
-For a safe first run:
+For a safe first run (inspect without writing files):
 
 ```bash
-python exportAttendance.py --group "LLC" --month 2026-03 --dry-run
+cd src
+python exportAttendance.py --group "My Footy Group" --month 2026-03 --dry-run
+```
+
+## CLI options
+
+| Option | Description |
+|---|---|
+| `--group` | Exact WhatsApp group name (required) |
+| `--month` | Target month in `YYYY-MM` format (default: previous month) |
+| `--output` | Output directory for CSV files |
+| `--user-data-dir` | Persistent browser profile directory |
+| `--timeout-ms` | Selector/action timeout in ms (default: 15000) |
+| `--limit-polls` | Limit number of polls processed (for testing) |
+| `--browser-channel` | Playwright browser channel, e.g. `chrome` |
+| `--include-no-votes` | Also collect "No" voters |
+| `--poll-title-filter` | Only process polls whose text contains this substring |
+| `--headless` | Run browser without showing a window |
+| `--dry-run` | Inspect and log without writing CSV exports |
+
+## Output files
+
+| File | Description |
+|---|---|
+| `polls.csv` | Raw poll rows: `pollTitle`, `pollDateText`, `option`, `voterName`, `sourceHint` |
+| `attendanceSummary.csv` | Aggregated summary: `name`, `yesCount`, `noCount`, `totalVotes`, `pollsResponded` |
+| `exportPreview.json` | JSON preview of both datasets for quick inspection |
+
+## Development
+
+```bash
+pip install -r dev-requirements.txt
+pytest
+black src/ tests/
 ```
 
 ## Notes
 
-This uses WhatsApp Web automation, so selectors may need adjustment if WhatsApp changes its UI.
-The default implementation is intentionally semi-automatic and defensive:
-- it reuses a persistent browser profile
-- it writes raw poll rows plus a summary CSV
-- it has optional `--limit-polls`
-- it can run headful so you can see what it is doing
-=======
-# organiseMyFooty
->>>>>>> c5882e42063981a634707e38e2a3c99efb681173
+- Uses WhatsApp Web browser automation; CSS selectors in `selectors.py` may need
+  updating if WhatsApp changes its UI.
+- Reuses a persistent browser profile so you only need to log in once.
+- `--dry-run` runs the browser and inspects polls but writes no output files.
