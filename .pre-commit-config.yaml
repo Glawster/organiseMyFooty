@@ -1,0 +1,13 @@
+repos:
+  - repo: https://github.com/psf/black
+    rev: stable
+    hooks:
+      - id: black
+        language: system
+  - repo: local
+    hooks:
+      - id: gui-naming-linter
+        name: GUI Naming Linter
+        entry: python tests/runLinter.py
+        language: system
+        types: [python]
