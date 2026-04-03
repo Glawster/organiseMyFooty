@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # organiseMyWhatsApp
 
 Python scaffolding for exporting WhatsApp poll attendance from WhatsApp Web.
@@ -43,3 +44,6 @@ The default implementation is intentionally semi-automatic and defensive:
 - it writes raw poll rows plus a summary CSV
 - it has optional `--limit-polls`
 - it can run headful so you can see what it is doing
+=======
+# organiseMyFooty
+>>>>>>> c5882e42063981a634707e38e2a3c99efb681173
