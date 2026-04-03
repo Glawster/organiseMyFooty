@@ -1,10 +1,11 @@
-from ui.mainMenu import mainMenu
+from __future__ import annotations
 
+import sys
+from pathlib import Path
 
-def main():
-    print("Starting application...")
-    mainMenu()
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from exportAttendance import main  # noqa: E402
 
 if __name__ == "__main__":
     main()
