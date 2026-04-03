@@ -62,11 +62,12 @@ browser and WhatsApp login. Restrict unit tests to pure-Python helpers.
 selectors there first when WhatsApp changes its UI — never scatter selector
 strings across other modules.
 
-### Dry-run flag
+### Confirm / dry-run flag
 
-The CLI exposes `--dry-run` (not `--confirm`) because it aligns with the
-WhatsApp export context where "inspect without writing" is the expected safe
-default phrasing. The `dryRun` boolean is passed through `RuntimeConfig`.
+The CLI uses `--confirm` (safe-by-default pattern). When `--confirm` is **not** passed the
+tool runs in dry-run mode — it opens the browser and inspects polls but writes no files.
+Pass `--confirm` to execute the export. The `dryRun` boolean (`not args.confirm`) is stored
+in `RuntimeConfig` and threaded through to `AttendanceExporter`.
 
 ### Logging
 

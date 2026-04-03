@@ -35,11 +35,18 @@ python exportAttendance.py \
   --user-data-dir ~/.local/share/organiseMyFooty/profile
 ```
 
-For a safe first run (inspect without writing files):
+For a safe first run (inspect without writing files — default behaviour):
 
 ```bash
 cd src
-python exportAttendance.py --group "My Footy Group" --month 2026-03 --dry-run
+python exportAttendance.py --group "My Footy Group" --month 2026-03
+```
+
+To actually write the CSV exports, add `--confirm`:
+
+```bash
+cd src
+python exportAttendance.py --group "My Footy Group" --month 2026-03 --confirm
 ```
 
 ## CLI options
@@ -56,7 +63,7 @@ python exportAttendance.py --group "My Footy Group" --month 2026-03 --dry-run
 | `--include-no-votes` | Also collect "No" voters |
 | `--poll-title-filter` | Only process polls whose text contains this substring |
 | `--headless` | Run browser without showing a window |
-| `--dry-run` | Inspect and log without writing CSV exports |
+| `--confirm` | Write CSV exports; omit to run in safe dry-run mode (default) |
 
 ## Output files
 
@@ -76,7 +83,7 @@ black src/ tests/
 
 ## Notes
 
-- Uses WhatsApp Web browser automation; CSS selectors in `selectors.py` may need
+- Uses WhatsApp Web browser automation; CSS selectors in `whatsappSelectors.py` may need
   updating if WhatsApp changes its UI.
 - Reuses a persistent browser profile so you only need to log in once.
-- `--dry-run` runs the browser and inspects polls but writes no output files.
+- Without `--confirm`, the tool runs in dry-run mode and writes no output files.

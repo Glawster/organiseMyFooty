@@ -73,9 +73,9 @@ def buildParser() -> argparse.ArgumentParser:
         help="reserved for future checkpoint/resume logic",
     )
     parser.add_argument(
-        "--dry-run",
+        "--confirm",
         action="store_true",
-        help="inspect and log without writing CSV exports",
+        help="execute changes and write CSV exports (default is dry-run)",
     )
     return parser
 
@@ -96,7 +96,7 @@ def main() -> None:
         outputDir=outputDir,
         userDataDir=userDataDir,
         headless=args.headless,
-        dryRun=args.dry_run,
+        dryRun=not args.confirm,
         timeoutMs=args.timeout_ms,
         limitPolls=args.limit_polls,
         browserChannel=args.browser_channel,
