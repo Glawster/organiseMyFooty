@@ -10,7 +10,7 @@ import re
 import time
 
 from attendanceConfig import RuntimeConfig, writeCsv
-from selectors import DEFAULT_SELECTORS, WhatsAppSelectors
+from whatsappSelectors import DEFAULT_SELECTORS, WhatsAppSelectors
 
 try:
     from organiseMyProjects.logUtils import getLogger  # type: ignore
