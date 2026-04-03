@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from exportAttendance import main  # noqa: E402
+from exportAttendance import main as run_app  # noqa: E402
 
 if __name__ == "__main__":
-    main()
+    run_app()
