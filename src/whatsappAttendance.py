@@ -157,6 +157,14 @@ class AttendanceExporter(DryRunMixin):
         records: list[PollRecord] = []
         pollCount = 0
 
+        self.logger.info(
+            "%slaunching browser (user_data_dir=%s, headless=%s, channel=%s)",
+            self.prefix,
+            self.config.userDataDir,
+            self.config.headless,
+            self.config.browserChannel or "default",
+        )
+
         with sync_playwright() as playwright:
             browserContext = playwright.chromium.launch_persistent_context(
                 user_data_dir=str(self.config.userDataDir),
@@ -166,7 +174,9 @@ class AttendanceExporter(DryRunMixin):
             )
             try:
                 page = browserContext.new_page()
+                self.logger.info("%snavigating to %s", self.prefix, self.selectors.webUrl)
                 page.goto(self.selectors.webUrl)
+                self.logger.info("%spage loaded: %s", self.prefix, page.url)
                 self.waitForWhatsAppReady(page)
                 self.openGroup(page, self.config.groupName)
                 self.scrollChatHistory(page)
@@ -243,6 +253,7 @@ class AttendanceExporter(DryRunMixin):
                             )
                         )
 
+                    noVoters: list[str] = []
                     if self.config.includeNoVotes:
                         noVoters = self.extractOptionVoters(
                             dialog, optionTexts=self.selectors.noOptionTexts
@@ -257,6 +268,15 @@ class AttendanceExporter(DryRunMixin):
                                     sourceHint=sourceText[:240],
                                 )
                             )
+
+                    self.logger.info(
+                        "%spoll %s: title=%r, yes=%s voter(s), no=%s voter(s)",
+                        self.prefix,
+                        index,
+                        pollTitle,
+                        len(yesVoters),
+                        len(noVoters),
+                    )
 
                     pollCount += 1
                     self.closeDialog(page, dialog)
@@ -276,8 +296,18 @@ class AttendanceExporter(DryRunMixin):
             self.prefix,
         )
         deadline = time.time() + max(120, self.config.timeoutMs / 1000)
+        startTime = time.time()
+        lastProgressLog = 0.0
 
         while time.time() < deadline:
+            elapsed = int(time.time() - startTime)
+            if elapsed - lastProgressLog >= 10:
+                self.logger.info(
+                    "%sstill waiting for whatsapp web (%ss elapsed)...",
+                    self.prefix,
+                    elapsed,
+                )
+                lastProgressLog = elapsed
             for selector in self.selectors.iterReadySelectors():
                 try:
                     locator = page.locator(selector).first
@@ -306,6 +336,11 @@ class AttendanceExporter(DryRunMixin):
                 searchBox.click(timeout=self.config.timeoutMs)
                 searchBox.fill("")
                 searchBox.type(groupName, delay=40)
+                self.logger.info(
+                    "%ssearch box ready (selector: %s), typed group name",
+                    self.prefix,
+                    selector,
+                )
                 break
             except Exception as exc:
                 lastError = exc
@@ -315,12 +350,17 @@ class AttendanceExporter(DryRunMixin):
 
         candidate = page.get_by_text(groupName, exact=True).first
         candidate.click(timeout=self.config.timeoutMs)
+        self.logger.info("%sgroup chat opened", self.prefix)
 
     def scrollChatHistory(self, page, scrollPasses: int = 12) -> None:
         self.logger.info("%sscrolling chat history to load older polls...", self.prefix)
-        for _ in range(scrollPasses):
+        for i in range(scrollPasses):
             page.mouse.wheel(0, -2000)
             page.wait_for_timeout(500)
+            if (i + 1) % 4 == 0 or i + 1 == scrollPasses:
+                self.logger.info(
+                    "%sscroll pass %s/%s", self.prefix, i + 1, scrollPasses
+                )
 
     def findPollCards(self, page) -> list:
         pollLocators: list = []
@@ -332,6 +372,10 @@ class AttendanceExporter(DryRunMixin):
                 count = locator.count()
             except Exception:
                 continue
+
+            self.logger.info(
+                "%spoll selector '%s' matched %s item(s)", self.prefix, selector, count
+            )
 
             for index in range(count):
                 item = locator.nth(index)
@@ -352,6 +396,9 @@ class AttendanceExporter(DryRunMixin):
             try:
                 dialog = page.locator(selector).last
                 dialog.wait_for(state="visible", timeout=self.config.timeoutMs)
+                self.logger.info(
+                    "%svotes dialog opened via selector: %s", self.prefix, selector
+                )
                 return dialog
             except Exception:
                 continue
@@ -453,12 +500,16 @@ class AttendanceExporter(DryRunMixin):
                 if control.is_visible(timeout=1000):
                     control.click(timeout=self.config.timeoutMs)
                     page.wait_for_timeout(400)
+                    self.logger.info(
+                        "%sclosed dialog via selector: %s", self.prefix, selector
+                    )
                     return
             except Exception:
                 continue
 
         page.keyboard.press("Escape")
         page.wait_for_timeout(400)
+        self.logger.info("%sclosed dialog via Escape key", self.prefix)
 
     def deduplicateRecords(self, records: list[PollRecord]) -> list[PollRecord]:
         output: list[PollRecord] = []
@@ -474,4 +525,7 @@ class AttendanceExporter(DryRunMixin):
                 continue
             seen.add(key)
             output.append(record)
+        self.logger.info(
+            "%sdeduplication: %s → %s records", self.prefix, len(records), len(output)
+        )
         return output
