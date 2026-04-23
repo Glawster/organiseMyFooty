@@ -15,7 +15,27 @@ class WhatsAppSelectors:
 
     webUrl: str = "https://web.whatsapp.com/"
 
+    # Broad selectors — any one visible means WhatsApp Web has fully loaded.
+    # Used only by waitForWhatsAppReady; add new entries here if the UI changes.
+    readyIndicatorCandidates: tuple[str, ...] = (
+        '[aria-label="Search or start a new chat"]',
+        '[placeholder="Search or start a new chat"]',
+        '[data-testid="chat-list"]',
+        '[aria-label="Chat list"]',
+        "#pane-side",
+        # Legacy data-tab attributes (older WhatsApp Web builds)
+        '[contenteditable="true"][data-tab="3"]',
+        '[contenteditable="true"][data-tab="4"]',
+    )
+
+    # Interactive search-box selectors — must be clickable/typeable.
+    # Used by openGroup to find and focus the search input.
     searchBoxCandidates: tuple[str, ...] = (
+        '[aria-label="Search or start a new chat"]',
+        '[placeholder="Search or start a new chat"]',
+        '[data-testid="search-input"]',
+        '[title="Search or start a new chat"]',
+        # Legacy data-tab attributes (older WhatsApp Web builds)
         '[contenteditable="true"][data-tab="3"]',
         '[contenteditable="true"][data-tab="4"]',
         'div[role="textbox"]',
@@ -52,6 +72,9 @@ class WhatsAppSelectors:
     noOptionTexts: tuple[str, ...] = ("No",)
 
     likelyMessageTimePattern: str = r"\b\d{1,2}:\d{2}\b"
+
+    def iterReadySelectors(self) -> Iterable[str]:
+        return self.readyIndicatorCandidates
 
     def iterSearchSelectors(self) -> Iterable[str]:
         return self.searchBoxCandidates

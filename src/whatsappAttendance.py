@@ -278,7 +278,7 @@ class AttendanceExporter(DryRunMixin):
         deadline = time.time() + max(120, self.config.timeoutMs / 1000)
 
         while time.time() < deadline:
-            for selector in self.selectors.iterSearchSelectors():
+            for selector in self.selectors.iterReadySelectors():
                 try:
                     locator = page.locator(selector).first
                     if locator.is_visible(timeout=1000):
