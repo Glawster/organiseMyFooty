@@ -149,10 +149,15 @@ class AttendanceExporter(DryRunMixin):
         return outputRows
 
     def collectPollAttendance(self) -> list[PollRecord]:
-        from playwright.sync_api import (
-            sync_playwright,
-            TimeoutError as PlaywrightTimeoutError,
-        )
+        try:
+            from playwright.sync_api import (
+                sync_playwright,
+                TimeoutError as PlaywrightTimeoutError,
+            )
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "playwright is not installed; run: pip install playwright && playwright install chromium"
+            ) from exc
 
         records: list[PollRecord] = []
         pollCount = 0
