@@ -51,7 +51,7 @@ class WhatsAppSelectors:
     yesOptionTexts: tuple[str, ...] = ("Yes",)
     noOptionTexts: tuple[str, ...] = ("No",)
 
-    likelyMessageTimePattern: str = r"\\b\\d{1,2}:\\d{2}\\b"
+    likelyMessageTimePattern: str = r"\b\d{1,2}:\d{2}\b"
 
     def iterSearchSelectors(self) -> Iterable[str]:
         return self.searchBoxCandidates

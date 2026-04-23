@@ -22,6 +22,24 @@ pip install -r requirements.txt
 playwright install chromium
 ```
 
+## First-run login
+
+On the very first run the browser profile is empty, so WhatsApp Web will show
+a QR-code login screen inside the Playwright-controlled browser window.
+
+1. Run without `--headless` (the default) so the browser window is visible.
+2. Open WhatsApp on your phone → **Linked devices** → **Link a device**.
+3. Scan the QR code shown in the browser window.
+4. Wait for your chats to load, then the tool will continue automatically.
+
+The session is persisted in `--user-data-dir`, so you only need to do this
+once. If the default 120-second window is not enough to scan the code, pass
+a longer timeout:
+
+```bash
+python main.py --group "My Footy Group" --month 2026-03 --timeout-ms 300000
+```
+
 ## Usage
 
 Run from the `src/` directory (or add `src/` to `PYTHONPATH`):

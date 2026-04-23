@@ -269,7 +269,13 @@ class AttendanceExporter(DryRunMixin):
     def waitForWhatsAppReady(self, page) -> None:
         page.wait_for_load_state("domcontentloaded")
         self.logger.info("%swaiting for WhatsApp Web to be ready...", self.prefix)
-        deadline = time.time() + max(60, self.config.timeoutMs / 1000)
+        self.logger.info(
+            "%s(first run: if a QR code appears in the browser window, open WhatsApp on "
+            "your phone → Linked devices → Link a device and scan it; use --timeout-ms "
+            "to allow more time, e.g. --timeout-ms 300000)",
+            self.prefix,
+        )
+        deadline = time.time() + max(120, self.config.timeoutMs / 1000)
 
         while time.time() < deadline:
             for selector in self.selectors.iterSearchSelectors():
@@ -285,7 +291,9 @@ class AttendanceExporter(DryRunMixin):
             time.sleep(1)
 
         raise TimeoutError(
-            "whatsapp web did not become ready; make sure you are logged in"
+            "whatsapp web did not become ready; if this is your first run, scan the QR "
+            "code that appears in the browser window using your phone's WhatsApp app. "
+            "Use --timeout-ms to allow more time (e.g. --timeout-ms 300000)."
         )
 
     def openGroup(self, page, groupName: str) -> None:

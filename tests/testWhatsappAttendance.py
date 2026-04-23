@@ -272,3 +272,33 @@ class TestDryRunPrefix:
     def test_prefix_when_dry_run_false(self):
         exporter = _make_exporter(dryRun=False)
         assert exporter.prefix == "..."
+
+
+# ---------------------------------------------------------------------------
+# extractLikelyDateText
+# ---------------------------------------------------------------------------
+
+
+class TestExtractLikelyDateText:
+    def test_extracts_time_from_source_text(self):
+        exporter = _make_exporter()
+        result = exporter.extractLikelyDateText("Training tonight\n10:30\nYes")
+        assert result == "10:30"
+
+    def test_extracts_single_digit_hour(self):
+        exporter = _make_exporter()
+        result = exporter.extractLikelyDateText("Poll sent 9:05 am")
+        assert result == "9:05"
+
+    def test_returns_empty_string_when_no_time(self):
+        exporter = _make_exporter()
+        result = exporter.extractLikelyDateText("Training tonight")
+        assert result == ""
+
+    def test_does_not_match_partial_numbers(self):
+        exporter = _make_exporter()
+        # "1234:56" is not a plausible time; the regex requires word boundaries
+        # on both sides of the pattern, so it must not be surrounded by word
+        # characters (digits or letters).
+        result = exporter.extractLikelyDateText("code1234:56end")
+        assert result == ""
