@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
@@ -16,21 +17,33 @@ DIALOG_POLL_INTERVAL_MS = 250  # Poll frequently without busy-waiting the browse
 
 
 try:
-    from organiseMyProjects.logUtils import getLogger  # type: ignore
+    from organiseMyProjects.logUtils import getLogger as _logUtilsGetLogger  # type: ignore
 except Exception:  # pragma: no cover
-    import logging
+    _logUtilsGetLogger = None
 
-    def getLogger(name: str):  # type: ignore
-        logger = logging.getLogger(name)
-        if not logger.handlers:
-            logger.setLevel(logging.INFO)
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                "%(asctime)s %(levelname)s %(name)s: %(message)s"
-            )
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-        return logger
+
+def getLogger(name: str, dryRun: bool = False):  # type: ignore
+    if _logUtilsGetLogger is not None:
+        # Support both the richer organiseMyProjects logger signature and simpler
+        # variants so console logging still works across installed versions.
+        for kwargs in (
+            {"includeConsole": True, "dryRun": dryRun},
+            {"includeConsole": True},
+            {},
+        ):
+            try:
+                return _logUtilsGetLogger(name, **kwargs)
+            except TypeError:
+                continue
+
+    logger = logging.getLogger(name)
+    if not logger.handlers:
+        logger.setLevel(logging.INFO)
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+    return logger
 
 
 @dataclass(frozen=True)
@@ -54,7 +67,9 @@ class AttendanceExporter(DryRunMixin):
     ):
         self.config = config
         self.selectors = selectors or DEFAULT_SELECTORS
-        self.logger = getLogger("organiseMyWhatsApp.exportAttendance")
+        self.logger = getLogger(
+            "organiseMyWhatsApp.exportAttendance", dryRun=self.config.dryRun
+        )
 
     def run(self) -> None:
         self.logger.info(
