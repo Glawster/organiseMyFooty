@@ -54,8 +54,17 @@ class WhatsAppSelectors:
     viewVotesText: str = "View votes"
 
     dialogCandidates: tuple[str, ...] = (
+        # Semantic dialog roles — catches some WhatsApp Web builds.
         'div[role="dialog"]',
         'div[aria-modal="true"]',
+        # data-testid patterns used in recent WhatsApp Web builds.
+        '[data-testid="popup-contents"]',
+        '[data-testid="drawer"]',
+        # Animation/modal attribute used in some builds.
+        'div[data-animate-modal-body]',
+        # Aria-labelled panels that appear for vote results.
+        '[aria-label="Poll results"]',
+        '[aria-label="View votes"]',
     )
 
     closeDialogCandidates: tuple[str, ...] = (
