@@ -12,6 +12,9 @@ import time
 from attendanceConfig import RuntimeConfig, writeCsv
 from whatsappSelectors import DEFAULT_SELECTORS, WhatsAppSelectors
 
+DIALOG_POLL_INTERVAL_MS = 250  # Poll frequently without busy-waiting the browser page.
+
+
 try:
     from organiseMyProjects.logUtils import getLogger  # type: ignore
 except Exception:  # pragma: no cover
@@ -179,7 +182,9 @@ class AttendanceExporter(DryRunMixin):
             )
             try:
                 page = browserContext.new_page()
-                self.logger.info("%snavigating to %s", self.prefix, self.selectors.webUrl)
+                self.logger.info(
+                    "%snavigating to %s", self.prefix, self.selectors.webUrl
+                )
                 page.goto(self.selectors.webUrl)
                 self.logger.info("%spage loaded: %s", self.prefix, page.url)
                 self.waitForWhatsAppReady(page)
@@ -237,7 +242,16 @@ class AttendanceExporter(DryRunMixin):
                             )
                             continue
 
-                    dialog = self.waitForDialog(page)
+                    try:
+                        dialog = self.waitForDialog(page)
+                    except TimeoutError:
+                        self.logger.warning(
+                            "%sunable to locate votes dialog for poll %s; skipping",
+                            self.prefix,
+                            index,
+                        )
+                        self.closeDialog(page, dialog=None)
+                        continue
                     pollTitle = (
                         self.extractPollTitle(dialog, sourceText=sourceText)
                         or "unknown poll"
@@ -397,16 +411,32 @@ class AttendanceExporter(DryRunMixin):
         return pollLocators
 
     def waitForDialog(self, page):
-        for selector in self.selectors.iterDialogSelectors():
-            try:
-                dialog = page.locator(selector).last
-                dialog.wait_for(state="visible", timeout=self.config.timeoutMs)
-                self.logger.info(
-                    "%svotes dialog opened via selector: %s", self.prefix, selector
-                )
-                return dialog
-            except Exception:
-                continue
+        timeoutMs = max(self.config.timeoutMs, DIALOG_POLL_INTERVAL_MS)
+        deadline = time.time() + (timeoutMs / 1000)
+        selectors = tuple(self.selectors.iterDialogSelectors())
+
+        while time.time() < deadline:
+            remainingMs = int((deadline - time.time()) * 1000)
+            if remainingMs <= 0:
+                break
+            # Keep the overall deadline separate from the per-selector probe timeout so
+            # we can retry multiple selector candidates within the remaining time budget.
+            probeTimeoutMs = min(1000, remainingMs)
+            for selector in selectors:
+                try:
+                    dialog = page.locator(selector).last
+                    if dialog.is_visible(timeout=probeTimeoutMs):
+                        self.logger.info(
+                            "%svotes dialog opened via selector: %s",
+                            self.prefix,
+                            selector,
+                        )
+                        return dialog
+                except Exception:
+                    continue
+
+            page.wait_for_timeout(DIALOG_POLL_INTERVAL_MS)
+
         raise TimeoutError("unable to locate votes dialog")
 
     def extractPollTitle(self, dialog, sourceText: str = "") -> str:
@@ -499,7 +529,9 @@ class AttendanceExporter(DryRunMixin):
         return cleaned
 
     def closeDialog(self, page, dialog) -> None:
-        for selector in self.selectors.closeDialogCandidates:
+        for selector in (
+            self.selectors.closeDialogCandidates + self.selectors.backCandidates
+        ):
             try:
                 control = page.locator(selector).first
                 if control.is_visible(timeout=1000):

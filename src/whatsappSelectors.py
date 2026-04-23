@@ -61,10 +61,19 @@ class WhatsAppSelectors:
         '[data-testid="popup-contents"]',
         '[data-testid="drawer"]',
         # Animation/modal attribute used in some builds.
-        'div[data-animate-modal-body]',
+        "div[data-animate-modal-body]",
         # Aria-labelled panels that appear for vote results.
         '[aria-label="Poll results"]',
         '[aria-label="View votes"]',
+        # Fallbacks for drawer-like vote panels that expose back/close controls.
+        'aside:has([aria-label="Back"])',
+        'aside:has([aria-label="Close"])',
+        'section:has([aria-label="Back"])',
+        'section:has([aria-label="Close"])',
+        # Last-resort English-text fallbacks for current WhatsApp Web poll panels.
+        # Keep these near the end because they are more brittle than aria/test-id selectors.
+        'div:has([aria-label="Back"]):has-text("Yes")',
+        'div:has([aria-label="Close"]):has-text("Yes")',
     )
 
     closeDialogCandidates: tuple[str, ...] = (

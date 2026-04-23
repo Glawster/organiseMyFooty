@@ -1,4 +1,5 @@
 """Tests for non-browser helper methods in whatsappAttendance module."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,7 +10,6 @@ from attendanceConfig import MonthWindow, RuntimeConfig
 from whatsappAttendance import AttendanceExporter, PollRecord
 
 from datetime import date
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -302,3 +302,87 @@ class TestExtractLikelyDateText:
         # characters (digits or letters).
         result = exporter.extractLikelyDateText("code1234:56end")
         assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# waitForDialog / closeDialog
+# ---------------------------------------------------------------------------
+
+
+class FakeDialogLocator:
+    def __init__(self, visible: bool):
+        self.visible = visible
+        self.last = self
+        self.timeouts = []
+
+    def is_visible(self, timeout=None):
+        self.timeouts.append(timeout)
+        return self.visible
+
+
+class FakeControlLocator:
+    def __init__(self, visible: bool):
+        self.visible = visible
+        self.first = self
+        self.clicked = False
+        self.timeouts = []
+
+    def is_visible(self, timeout=None):
+        self.timeouts.append(timeout)
+        return self.visible
+
+    def click(self, timeout=None):
+        self.clicked = True
+
+
+class FakePage:
+    def __init__(self, locator_map):
+        self.locator_map = locator_map
+        self.waits = []
+        self.escape_presses = []
+        self.keyboard = self
+
+    def locator(self, selector):
+        return self.locator_map[selector]
+
+    def wait_for_timeout(self, timeout):
+        self.waits.append(timeout)
+
+    def press(self, key):
+        self.escape_presses.append(key)
+
+
+class TestDialogHandling:
+    def test_wait_for_dialog_returns_visible_fallback_selector(self):
+        selectors = _make_exporter().selectors
+        visible_selector = '[data-testid="drawer"]'
+        locator_map = {
+            selector: FakeDialogLocator(selector == visible_selector)
+            for selector in selectors.iterDialogSelectors()
+        }
+        page = FakePage(locator_map)
+        exporter = _make_exporter(timeoutMs=10)
+
+        dialog = exporter.waitForDialog(page)
+
+        assert dialog is locator_map[visible_selector]
+        assert locator_map[visible_selector].timeouts
+        assert all(
+            timeout is not None and 0 < timeout <= 1000
+            for timeout in locator_map[visible_selector].timeouts
+        )
+
+    def test_close_dialog_uses_back_button_when_close_unavailable(self):
+        exporter = _make_exporter()
+        locator_map = {
+            'button[aria-label="Close"]': FakeControlLocator(False),
+            '[role="button"][aria-label="Close"]': FakeControlLocator(False),
+            'button[aria-label="Back"]': FakeControlLocator(True),
+            '[role="button"][aria-label="Back"]': FakeControlLocator(False),
+        }
+        page = FakePage(locator_map)
+
+        exporter.closeDialog(page, dialog=None)
+
+        assert locator_map['button[aria-label="Back"]'].clicked is True
+        assert page.escape_presses == []
