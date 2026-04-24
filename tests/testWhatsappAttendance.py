@@ -547,6 +547,7 @@ class TestFindPollCards:
     def test_logs_progress_for_large_poll_scan(self, monkeypatch):
         exporter = _make_exporter()
         exporter.logger = self.StubLogger()
+        # Keep keys text-based so this test focuses only on scan progress logging.
         monkeypatch.setattr(exporter, "extractMessageTestId", lambda locator: "")
 
         selector_map = {

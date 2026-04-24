@@ -16,7 +16,7 @@ from attendanceConfig import RuntimeConfig, writeCsv
 from whatsappSelectors import DEFAULT_SELECTORS, WhatsAppSelectors
 
 DIALOG_POLL_INTERVAL_MS = 250  # Poll frequently without busy-waiting the browser page.
-POLL_SCAN_PROGRESS_LOG_INTERVAL = 25
+POLL_PROGRESS_INTERVAL = 25
 
 
 def getLogger(name: str, dryRun: bool = False):  # type: ignore
@@ -411,8 +411,8 @@ class AttendanceExporter(DryRunMixin):
                     )
                 )
                 processed = index + 1
-                if count > POLL_SCAN_PROGRESS_LOG_INTERVAL and (
-                    processed % POLL_SCAN_PROGRESS_LOG_INTERVAL == 0
+                if count >= POLL_PROGRESS_INTERVAL and (
+                    processed % POLL_PROGRESS_INTERVAL == 0
                 ):
                     self.logger.info(
                         "%sprocessed %s/%s poll candidate(s) for selector '%s'",
