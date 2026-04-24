@@ -371,9 +371,7 @@ class TestPollTargetHelpers:
 
 
 class TestLoggerInitialisation:
-    def test_uses_log_utils_logger_with_console_enabled_when_supported(
-        self, monkeypatch
-    ):
+    def test_uses_log_utils_logger_with_console_enabled(self, monkeypatch):
         captured = {}
 
         def fake_get_logger(name, **kwargs):

@@ -39,7 +39,6 @@ def _fake_get_logger(name: str, **kwargs):
 organiseMyProjects = types.ModuleType("organiseMyProjects")
 logUtils = types.ModuleType("organiseMyProjects.logUtils")
 logUtils.getLogger = _fake_get_logger
-logUtils.thisApplication = "organiseMyFooty"
 organiseMyProjects.logUtils = logUtils
 sys.modules.setdefault("organiseMyProjects", organiseMyProjects)
 sys.modules.setdefault("organiseMyProjects.logUtils", logUtils)
