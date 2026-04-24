@@ -380,36 +380,36 @@ class TestLoggerInitialisation:
             logger.setLevel(old_level)
 
 
-class FakePollButtonLocator:
-    def __init__(self, name: str):
-        self.name = name
-        self.first = self
-        self.clicked = False
-        self.scrolled = False
-        self.filtered_by = []
-
-    def filter(self, has_text=None):
-        self.filtered_by.append(has_text)
-        return self
-
-    def scroll_into_view_if_needed(self, timeout=None):
-        self.scrolled = True
-
-    def click(self, timeout=None):
-        self.clicked = True
-
-
-class FakePollPage:
-    def __init__(self, locator_map):
-        self.locator_map = locator_map
-        self.requested_selectors = []
-
-    def locator(self, selector):
-        self.requested_selectors.append(selector)
-        return self.locator_map.setdefault(selector, FakePollButtonLocator(selector))
-
-
 class TestPollTargetOpening:
+    class FakePollButtonLocator:
+        def __init__(self, name: str):
+            self.name = name
+            self.first = self
+            self.clicked = False
+            self.scrolled = False
+            self.filtered_by = []
+
+        def filter(self, has_text=None):
+            self.filtered_by.append(has_text)
+            return self
+
+        def scroll_into_view_if_needed(self, timeout=None):
+            self.scrolled = True
+
+        def click(self, timeout=None):
+            self.clicked = True
+
+    class FakePollPage:
+        def __init__(self, locator_map):
+            self.locator_map = locator_map
+            self.requested_selectors = []
+
+        def locator(self, selector):
+            self.requested_selectors.append(selector)
+            return self.locator_map.setdefault(
+                selector, TestPollTargetOpening.FakePollButtonLocator(selector)
+            )
+
     def test_build_poll_button_selector_prefers_message_test_id(self):
         exporter = _make_exporter()
         target = PollTarget(
@@ -430,8 +430,8 @@ class TestPollTargetOpening:
             messageTestId="conv-msg-123",
         )
         stable_selector = exporter.buildPollButtonSelector(target)
-        stable_locator = FakePollButtonLocator(stable_selector)
-        page = FakePollPage({stable_selector: stable_locator})
+        stable_locator = self.FakePollButtonLocator(stable_selector)
+        page = self.FakePollPage({stable_selector: stable_locator})
 
         exporter.openPollTarget(page, target)
 

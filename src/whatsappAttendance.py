@@ -472,9 +472,9 @@ class AttendanceExporter(DryRunMixin):
             except Exception as exc:
                 lastError = exc
 
-        if lastError is not None:
-            raise lastError
-        raise RuntimeError("unable to open poll votes dialog")
+        if lastError is None:
+            raise RuntimeError("unable to build poll vote locator")
+        raise lastError
 
     def waitForDialog(self, page):
         timeoutMs = max(self.config.timeoutMs, DIALOG_POLL_INTERVAL_MS)
