@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -371,7 +372,7 @@ class TestPollTargetHelpers:
 
 
 class TestLoggerInitialisation:
-    def test_uses_log_utils_logger_with_console_enabled(self, monkeypatch):
+    def test_passes_include_console_true_to_log_utils(self, monkeypatch):
         captured = {}
 
         def fake_get_logger(name, **kwargs):
@@ -389,7 +390,8 @@ class TestLoggerInitialisation:
             "kwargs": {"includeConsole": True, "dryRun": True},
         }
 
-    def test_passes_dry_run_state_to_log_utils(self, monkeypatch):
+    @pytest.mark.parametrize("dry_run", [False, True])
+    def test_passes_dry_run_state_to_log_utils(self, monkeypatch, dry_run):
         captured = {}
 
         def fake_get_logger(name, **kwargs):
@@ -399,13 +401,31 @@ class TestLoggerInitialisation:
 
         monkeypatch.setattr(whatsappAttendance, "_logUtilsGetLogger", fake_get_logger)
 
-        logger = whatsappAttendance.getLogger("test.logger", dryRun=False)
+        logger = whatsappAttendance.getLogger("test.logger", dryRun=dry_run)
 
         assert logger == "logger"
         assert captured == {
             "name": "test.logger",
-            "kwargs": {"includeConsole": True, "dryRun": False},
+            "kwargs": {"includeConsole": True, "dryRun": dry_run},
         }
+
+
+class TestLogUtilsTestStub:
+    def test_conftest_installs_log_utils_stub(self):
+        log_utils = sys.modules["organiseMyProjects.logUtils"]
+
+        logger = log_utils.getLogger("stub.logger", includeConsole=True, dryRun=True)
+
+        assert logger.name == "stub.logger"
+        assert logger.kwargs == {"includeConsole": True, "dryRun": True}
+
+        assert logger.info("message") is None
+        assert logger.warning("message") is None
+        assert logger.debug("message") is None
+        assert logger.action("message") is None
+        assert logger.doing("message") is None
+        assert logger.done("message") is None
+        assert logger.value("name", "value") is None
 
 
 class TestPollTargetOpening:
