@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 
 import pytest
 
 from attendanceConfig import MonthWindow, RuntimeConfig
 import whatsappAttendance
-from whatsappAttendance import AttendanceExporter, PollRecord
+from whatsappAttendance import AttendanceExporter, PollRecord, PollTarget
 
 from datetime import date
 
@@ -372,10 +373,71 @@ class TestLoggerInitialisation:
                 )
                 == 1
             )
+            assert logger.handlers[0].stream is sys.stdout
         finally:
             logger.handlers.clear()
             logger.handlers.extend(old_handlers)
             logger.setLevel(old_level)
+
+
+class FakePollButtonLocator:
+    def __init__(self, name: str):
+        self.name = name
+        self.first = self
+        self.clicked = False
+        self.scrolled = False
+        self.filtered_by = []
+
+    def filter(self, has_text=None):
+        self.filtered_by.append(has_text)
+        return self
+
+    def scroll_into_view_if_needed(self, timeout=None):
+        self.scrolled = True
+
+    def click(self, timeout=None):
+        self.clicked = True
+
+
+class FakePollPage:
+    def __init__(self, locator_map):
+        self.locator_map = locator_map
+        self.requested_selectors = []
+
+    def locator(self, selector):
+        self.requested_selectors.append(selector)
+        return self.locator_map.setdefault(selector, FakePollButtonLocator(selector))
+
+
+class TestPollTargetOpening:
+    def test_build_poll_button_selector_prefers_message_test_id(self):
+        exporter = _make_exporter()
+        target = PollTarget(
+            selector='div:has-text("View votes")',
+            sourceText="Training\nView votes",
+            messageTestId="conv-msg-123",
+        )
+
+        assert exporter.buildPollButtonSelector(target) == (
+            '[data-testid="conv-msg-123"] [data-testid="poll-view-votes"]'
+        )
+
+    def test_open_poll_target_uses_stable_message_selector_when_available(self):
+        exporter = _make_exporter()
+        target = PollTarget(
+            selector='div:has-text("View votes")',
+            sourceText="Training\nView votes",
+            messageTestId="conv-msg-123",
+        )
+        stable_selector = exporter.buildPollButtonSelector(target)
+        stable_locator = FakePollButtonLocator(stable_selector)
+        page = FakePollPage({stable_selector: stable_locator})
+
+        exporter.openPollTarget(page, target)
+
+        assert page.requested_selectors[0] == stable_selector
+        assert stable_locator.scrolled is True
+        assert stable_locator.clicked is True
 
 
 # ---------------------------------------------------------------------------

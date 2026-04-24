@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
@@ -39,7 +40,7 @@ def getLogger(name: str, dryRun: bool = False):  # type: ignore
     logger = logging.getLogger(name)
     if not logger.handlers:
         logger.setLevel(logging.INFO)
-        handler = logging.StreamHandler()
+        handler = logging.StreamHandler(sys.stdout)
         formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
         handler.setFormatter(formatter)
         logger.addHandler(handler)
@@ -53,6 +54,13 @@ class PollRecord:
     option: str
     voterName: str
     sourceHint: str
+
+
+@dataclass(frozen=True)
+class PollTarget:
+    selector: str
+    sourceText: str
+    messageTestId: str = ""
 
 
 class DryRunMixin:
@@ -211,7 +219,7 @@ class AttendanceExporter(DryRunMixin):
                     "%scandidate poll cards found: %s", self.prefix, len(pollLocators)
                 )
 
-                for index, locator in enumerate(pollLocators, start=1):
+                for index, pollTarget in enumerate(pollLocators, start=1):
                     if (
                         self.config.limitPolls is not None
                         and pollCount >= self.config.limitPolls
@@ -223,13 +231,7 @@ class AttendanceExporter(DryRunMixin):
                         )
                         break
 
-                    try:
-                        locator.scroll_into_view_if_needed(
-                            timeout=self.config.timeoutMs
-                        )
-                        sourceText = locator.inner_text(timeout=self.config.timeoutMs)
-                    except Exception:
-                        sourceText = ""
+                    sourceText = pollTarget.sourceText
 
                     if (
                         self.config.pollTitleFilter
@@ -245,17 +247,10 @@ class AttendanceExporter(DryRunMixin):
 
                     self.logger.info("%sopening poll %s", self.prefix, index)
                     try:
-                        locator.click(timeout=self.config.timeoutMs)
-                    except Exception:
-                        try:
-                            locator.get_by_text(
-                                self.selectors.viewVotesText, exact=False
-                            ).click(timeout=self.config.timeoutMs)
-                        except Exception as exc:
-                            self.logger.warning(
-                                "Unable to open poll votes dialog: %s", exc
-                            )
-                            continue
+                        self.openPollTarget(page, pollTarget)
+                    except Exception as exc:
+                        self.logger.warning("Unable to open poll votes dialog: %s", exc)
+                        continue
 
                     try:
                         dialog = self.waitForDialog(page)
@@ -396,8 +391,8 @@ class AttendanceExporter(DryRunMixin):
                     "%sscroll pass %s/%s", self.prefix, i + 1, scrollPasses
                 )
 
-    def findPollCards(self, page) -> list:
-        pollLocators: list = []
+    def findPollCards(self, page) -> list[PollTarget]:
+        pollLocators: list[PollTarget] = []
         seenKeys: set[str] = set()
 
         for selector in self.selectors.iterPollSelectors():
@@ -417,13 +412,69 @@ class AttendanceExporter(DryRunMixin):
                     text = item.inner_text(timeout=1000)
                 except Exception:
                     text = f"item-{index}"
-                key = f"{selector}|{text[:120]}"
+                messageTestId = self.extractMessageTestId(item)
+                key = f"{messageTestId or selector}|{text[:120]}"
                 if key in seenKeys:
                     continue
                 seenKeys.add(key)
-                pollLocators.append(item)
+                pollLocators.append(
+                    PollTarget(
+                        selector=selector,
+                        sourceText=text,
+                        messageTestId=messageTestId or "",
+                    )
+                )
 
         return pollLocators
+
+    def extractMessageTestId(self, locator) -> str:
+        try:
+            container = locator.locator(
+                'xpath=ancestor-or-self::*[starts-with(@data-testid, "conv-msg-")][1]'
+            ).first
+            return container.get_attribute("data-testid") or ""
+        except Exception:
+            return ""
+
+    def extractPollSummaryText(self, sourceText: str) -> str:
+        for line in sourceText.splitlines():
+            value = line.strip()
+            if value:
+                return value
+        return ""
+
+    def buildPollButtonSelector(self, pollTarget: PollTarget) -> str:
+        if pollTarget.messageTestId:
+            return (
+                f'[data-testid="{pollTarget.messageTestId}"] '
+                '[data-testid="poll-view-votes"]'
+            )
+        return pollTarget.selector
+
+    def openPollTarget(self, page, pollTarget: PollTarget) -> None:
+        candidateLocators = [
+            page.locator(self.buildPollButtonSelector(pollTarget)).first
+        ]
+        summaryText = self.extractPollSummaryText(pollTarget.sourceText)
+        if summaryText:
+            candidateLocators.append(
+                page.locator(pollTarget.selector).filter(has_text=summaryText).first
+            )
+        if pollTarget.selector != self.buildPollButtonSelector(pollTarget):
+            candidateLocators.append(page.locator(pollTarget.selector).first)
+
+        lastError: Exception | None = None
+        for locator in candidateLocators:
+            try:
+                locator.scroll_into_view_if_needed(timeout=self.config.timeoutMs)
+                locator.click(timeout=self.config.timeoutMs)
+                return
+            except Exception as exc:
+                lastError = exc
+
+        if lastError is not None:
+            raise lastError
+        raise RuntimeError("unable to open poll votes dialog")
 
     def waitForDialog(self, page):
         timeoutMs = max(self.config.timeoutMs, DIALOG_POLL_INTERVAL_MS)

@@ -47,6 +47,7 @@ class WhatsAppSelectors:
     )
 
     pollCardCandidates: tuple[str, ...] = (
+        '[data-testid="poll-view-votes"]',
         'div[role="button"]:has-text("View votes")',
         'div:has-text("View votes")',
     )
