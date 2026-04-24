@@ -6,6 +6,8 @@ from pathlib import Path
 
 
 class _FakeStructuredLogger:
+    """Test stub for organiseMyProjects.logUtils logger instances."""
+
     def __init__(self, name: str, **kwargs):
         self.name = name
         self.kwargs = kwargs
@@ -33,6 +35,7 @@ class _FakeStructuredLogger:
 
 
 def _fake_get_logger(name: str, **kwargs):
+    """Return a stub logger matching the organiseMyProjects.logUtils factory."""
     return _FakeStructuredLogger(name, **kwargs)
 
 

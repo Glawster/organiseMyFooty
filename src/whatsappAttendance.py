@@ -9,7 +9,7 @@ import json
 import re
 import time
 
-# Private alias used by the local getLogger wrapper; tests stub this dependency.
+# Private alias for logUtils.getLogger; kept at module scope so tests can stub it.
 from organiseMyProjects.logUtils import getLogger as _logUtilsGetLogger  # type: ignore[import-not-found]
 
 from attendanceConfig import RuntimeConfig, writeCsv
