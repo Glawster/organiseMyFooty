@@ -58,6 +58,8 @@ class PollRecord:
 
 @dataclass(frozen=True)
 class PollTarget:
+    """Stable poll target data used to refind a vote button after the UI changes."""
+
     selector: str
     sourceText: str
     messageTestId: str = ""
@@ -434,7 +436,12 @@ class AttendanceExporter(DryRunMixin):
                 'xpath=ancestor-or-self::*[starts-with(@data-testid, "conv-msg-")][1]'
             ).first
             return container.get_attribute("data-testid") or ""
-        except Exception:
+        except Exception as exc:
+            self.logger.debug(
+                "%sunable to extract poll message test id: %s",
+                self.prefix,
+                exc,
+            )
             return ""
 
     def extractPollSummaryText(self, sourceText: str) -> str:
@@ -476,7 +483,10 @@ class AttendanceExporter(DryRunMixin):
             except Exception as exc:
                 lastError = exc
 
-        raise lastError
+        raise RuntimeError(
+            "failed to interact with poll vote button "
+            f"after {len(candidateLocators)} attempt(s) for {summaryText!r}"
+        ) from lastError
 
     def waitForDialog(self, page):
         timeoutMs = max(self.config.timeoutMs, DIALOG_POLL_INTERVAL_MS)

@@ -314,24 +314,26 @@ class TestExtractLikelyDateText:
 
 class TestPollTargetHelpers:
     class FakeMessageContainer:
-        def __init__(self, test_id: str | None):
-            self.test_id = test_id
+        def __init__(self, messageTestId: str | None):
+            self.messageTestId = messageTestId
             self.first = self
 
         def get_attribute(self, name):
             assert name == "data-testid"
-            return self.test_id
+            return self.messageTestId
 
     class FakePollLocator:
-        def __init__(self, test_id: str | None = None, should_raise: bool = False):
-            self.test_id = test_id
+        def __init__(
+            self, messageTestId: str | None = None, should_raise: bool = False
+        ):
+            self.messageTestId = messageTestId
             self.should_raise = should_raise
 
         def locator(self, selector):
             assert selector.startswith("xpath=ancestor-or-self::*")
             if self.should_raise:
                 raise RuntimeError("no ancestor")
-            return TestPollTargetHelpers.FakeMessageContainer(self.test_id)
+            return TestPollTargetHelpers.FakeMessageContainer(self.messageTestId)
 
     def test_extract_poll_summary_text_returns_first_non_empty_line(self):
         exporter = _make_exporter()
@@ -349,14 +351,17 @@ class TestPollTargetHelpers:
 
     def test_extract_message_test_id_returns_value_when_present(self):
         exporter = _make_exporter()
-        locator = self.FakePollLocator(test_id="conv-msg-123")
+        locator = self.FakePollLocator(messageTestId="conv-msg-123")
 
         assert exporter.extractMessageTestId(locator) == "conv-msg-123"
 
     def test_extract_message_test_id_returns_empty_string_on_failure(self):
         exporter = _make_exporter()
 
-        assert exporter.extractMessageTestId(self.FakePollLocator(test_id=None)) == ""
+        assert (
+            exporter.extractMessageTestId(self.FakePollLocator(messageTestId=None))
+            == ""
+        )
         assert (
             exporter.extractMessageTestId(self.FakePollLocator(should_raise=True)) == ""
         )
@@ -432,6 +437,15 @@ class TestLoggerInitialisation:
             result.info("stdout check")
             captured = capsys.readouterr()
             assert "stdout check" in captured.out
+            result_again = whatsappAttendance.getLogger(logger_name)
+            assert result_again is logger
+            assert (
+                sum(
+                    isinstance(handler, logging.StreamHandler)
+                    for handler in logger.handlers
+                )
+                == 1
+            )
         finally:
             logger.handlers.clear()
             logger.handlers.extend(old_handlers)
@@ -511,7 +525,9 @@ class TestPollTargetOpening:
         generic_locator = self.FakePollButtonLocator(target.selector, should_fail=True)
         page = self.FakePollPage({target.selector: generic_locator})
 
-        with pytest.raises(RuntimeError, match="scroll failed"):
+        with pytest.raises(
+            RuntimeError, match="failed to interact with poll vote button"
+        ):
             exporter.openPollTarget(page, target)
 
 
