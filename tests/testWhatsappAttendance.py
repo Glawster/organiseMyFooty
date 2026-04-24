@@ -513,21 +513,21 @@ class TestPollTargetOpening:
 
 
 class TestFindPollCards:
-    class FakeLogger:
+    class StubLogger:
         def __init__(self):
             self.messages = []
 
         def info(self, message, *args):
             self.messages.append(message % args if args else message)
 
-    class FakePollItem:
+    class StubPollItem:
         def __init__(self, text: str):
             self.text = text
 
         def inner_text(self, timeout=None):
             return self.text
 
-    class FakePollCollection:
+    class StubPollCollection:
         def __init__(self, texts):
             self.texts = list(texts)
 
@@ -535,9 +535,9 @@ class TestFindPollCards:
             return len(self.texts)
 
         def nth(self, index):
-            return TestFindPollCards.FakePollItem(self.texts[index])
+            return TestFindPollCards.StubPollItem(self.texts[index])
 
-    class FakePollPage:
+    class StubPollPage:
         def __init__(self, selector_map):
             self.selector_map = selector_map
 
@@ -546,17 +546,17 @@ class TestFindPollCards:
 
     def test_logs_progress_during_large_poll_candidate_scan(self, monkeypatch):
         exporter = _make_exporter()
-        exporter.logger = self.FakeLogger()
+        exporter.logger = self.StubLogger()
         monkeypatch.setattr(exporter, "extractMessageTestId", lambda locator: "")
 
         selector_map = {
-            '[data-testid="poll-view-votes"]': self.FakePollCollection([]),
-            'div[role="button"]:has-text("View votes")': self.FakePollCollection([]),
-            'div:has-text("View votes")': self.FakePollCollection(
+            '[data-testid="poll-view-votes"]': self.StubPollCollection([]),
+            'div[role="button"]:has-text("View votes")': self.StubPollCollection([]),
+            'div:has-text("View votes")': self.StubPollCollection(
                 [f"Training {index}" for index in range(60)]
             ),
         }
-        page = self.FakePollPage(selector_map)
+        page = self.StubPollPage(selector_map)
 
         result = exporter.findPollCards(page)
 
