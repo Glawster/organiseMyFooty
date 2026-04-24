@@ -11,25 +11,25 @@ class _FakeStructuredLogger:
         self.kwargs = kwargs
 
     def info(self, *args, **kwargs):
-        return None
+        pass
 
     def warning(self, *args, **kwargs):
-        return None
+        pass
 
     def debug(self, *args, **kwargs):
-        return None
+        pass
 
     def action(self, *args, **kwargs):
-        return None
+        pass
 
     def doing(self, *args, **kwargs):
-        return None
+        pass
 
     def done(self, *args, **kwargs):
-        return None
+        pass
 
     def value(self, *args, **kwargs):
-        return None
+        pass
 
 
 def _fake_get_logger(name: str, **kwargs):

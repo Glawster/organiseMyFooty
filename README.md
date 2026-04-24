@@ -98,7 +98,7 @@ python exportAttendance.py --group "My Footy Group" --month 2026-03 --confirm
 
 ```bash
 pip install -r dev-requirements.txt
-python -m pytest
+pytest
 black src/ tests/
 ```
 
