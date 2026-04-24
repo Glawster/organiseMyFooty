@@ -428,6 +428,7 @@ class AttendanceExporter(DryRunMixin):
         return pollLocators
 
     def extractMessageTestId(self, locator) -> str:
+        """Return the nearest WhatsApp conversation message test id for a poll element."""
         try:
             container = locator.locator(
                 'xpath=ancestor-or-self::*[starts-with(@data-testid, "conv-msg-")][1]'
@@ -437,6 +438,7 @@ class AttendanceExporter(DryRunMixin):
             return ""
 
     def extractPollSummaryText(self, sourceText: str) -> str:
+        """Return the first non-empty source line as a stable text hint for a poll."""
         for line in sourceText.splitlines():
             value = line.strip()
             if value:
@@ -444,6 +446,7 @@ class AttendanceExporter(DryRunMixin):
         return ""
 
     def buildPollButtonSelector(self, pollTarget: PollTarget) -> str:
+        """Build the most stable available selector for the target poll vote button."""
         if pollTarget.messageTestId:
             return (
                 f'[data-testid="{pollTarget.messageTestId}"] '
@@ -452,6 +455,7 @@ class AttendanceExporter(DryRunMixin):
         return pollTarget.selector
 
     def openPollTarget(self, page, pollTarget: PollTarget) -> None:
+        """Open a poll using stable test ids first, then text-filtered and generic fallbacks."""
         candidateLocators = [
             page.locator(self.buildPollButtonSelector(pollTarget)).first
         ]
