@@ -9,7 +9,8 @@ import json
 import re
 import time
 
-from organiseMyProjects.logUtils import getLogger as _logUtilsGetLogger  # type: ignore
+# External runtime dependency; tests stub this module in tests/conftest.py.
+from organiseMyProjects.logUtils import getLogger as _logUtilsGetLogger  # type: ignore[import-not-found]
 
 from attendanceConfig import RuntimeConfig, writeCsv
 from whatsappSelectors import DEFAULT_SELECTORS, WhatsAppSelectors
