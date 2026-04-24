@@ -308,6 +308,61 @@ class TestExtractLikelyDateText:
 
 
 # ---------------------------------------------------------------------------
+# extractPollSummaryText / extractMessageTestId
+# ---------------------------------------------------------------------------
+
+
+class TestPollTargetHelpers:
+    class FakeMessageContainer:
+        def __init__(self, test_id: str | None):
+            self.test_id = test_id
+            self.first = self
+
+        def get_attribute(self, name):
+            assert name == "data-testid"
+            return self.test_id
+
+    class FakePollLocator:
+        def __init__(self, test_id: str | None = None, should_raise: bool = False):
+            self.test_id = test_id
+            self.should_raise = should_raise
+
+        def locator(self, selector):
+            assert selector.startswith("xpath=ancestor-or-self::*")
+            if self.should_raise:
+                raise RuntimeError("no ancestor")
+            return TestPollTargetHelpers.FakeMessageContainer(self.test_id)
+
+    def test_extract_poll_summary_text_returns_first_non_empty_line(self):
+        exporter = _make_exporter()
+
+        assert (
+            exporter.extractPollSummaryText("\n  \nTraining Night\nView votes")
+            == "Training Night"
+        )
+
+    def test_extract_poll_summary_text_returns_empty_string_when_no_content(self):
+        exporter = _make_exporter()
+
+        assert exporter.extractPollSummaryText("\n   \n") == ""
+        assert exporter.extractPollSummaryText("") == ""
+
+    def test_extract_message_test_id_returns_value_when_present(self):
+        exporter = _make_exporter()
+        locator = self.FakePollLocator(test_id="conv-msg-123")
+
+        assert exporter.extractMessageTestId(locator) == "conv-msg-123"
+
+    def test_extract_message_test_id_returns_empty_string_on_failure(self):
+        exporter = _make_exporter()
+
+        assert exporter.extractMessageTestId(self.FakePollLocator(test_id=None)) == ""
+        assert (
+            exporter.extractMessageTestId(self.FakePollLocator(should_raise=True)) == ""
+        )
+
+
+# ---------------------------------------------------------------------------
 # logger initialisation
 # ---------------------------------------------------------------------------
 
