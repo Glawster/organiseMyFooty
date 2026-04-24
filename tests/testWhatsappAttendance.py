@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-import sys
 from pathlib import Path
 
 import pytest
@@ -373,7 +371,7 @@ class TestPollTargetHelpers:
 
 
 class TestLoggerInitialisation:
-    def test_uses_external_logger_with_console_enabled_when_supported(
+    def test_uses_log_utils_logger_with_console_enabled_when_supported(
         self, monkeypatch
     ):
         captured = {}
@@ -393,13 +391,12 @@ class TestLoggerInitialisation:
             "kwargs": {"includeConsole": True, "dryRun": True},
         }
 
-    def test_retries_external_logger_when_kwargs_not_supported(self, monkeypatch):
-        calls = []
+    def test_passes_dry_run_state_to_log_utils(self, monkeypatch):
+        captured = {}
 
         def fake_get_logger(name, **kwargs):
-            calls.append((name, kwargs))
-            if kwargs:
-                raise TypeError("unexpected kwargs")
+            captured["name"] = name
+            captured["kwargs"] = kwargs
             return "logger"
 
         monkeypatch.setattr(whatsappAttendance, "_logUtilsGetLogger", fake_get_logger)
@@ -407,49 +404,10 @@ class TestLoggerInitialisation:
         logger = whatsappAttendance.getLogger("test.logger", dryRun=False)
 
         assert logger == "logger"
-        assert calls == [
-            ("test.logger", {"includeConsole": True, "dryRun": False}),
-            ("test.logger", {"includeConsole": True}),
-            ("test.logger", {}),
-        ]
-
-    def test_stdlib_fallback_adds_stream_handler_once(self, monkeypatch, capsys):
-        monkeypatch.setattr(whatsappAttendance, "_logUtilsGetLogger", None)
-        logger_name = "test.whatsappAttendance.logger"
-        logger = logging.getLogger(logger_name)
-        old_handlers = list(logger.handlers)
-        old_level = logger.level
-        try:
-            logger.handlers.clear()
-
-            result = whatsappAttendance.getLogger(logger_name)
-
-            assert result is logger
-            assert logger.level == logging.INFO
-            assert (
-                sum(
-                    isinstance(handler, logging.StreamHandler)
-                    for handler in logger.handlers
-                )
-                == 1
-            )
-            assert logger.handlers[0].stream is sys.stdout
-            result.info("stdout check")
-            captured = capsys.readouterr()
-            assert "stdout check" in captured.out
-            result_again = whatsappAttendance.getLogger(logger_name)
-            assert result_again is logger
-            assert (
-                sum(
-                    isinstance(handler, logging.StreamHandler)
-                    for handler in logger.handlers
-                )
-                == 1
-            )
-        finally:
-            logger.handlers.clear()
-            logger.handlers.extend(old_handlers)
-            logger.setLevel(old_level)
+        assert captured == {
+            "name": "test.logger",
+            "kwargs": {"includeConsole": True, "dryRun": False},
+        }
 
 
 class TestPollTargetOpening:

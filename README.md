@@ -22,6 +22,9 @@ pip install -r requirements.txt
 playwright install chromium
 ```
 
+This project expects `organiseMyProjects.logUtils` to be available in the same
+Python environment for centralized logging.
+
 ## First-run login
 
 On the very first run the browser profile is empty, so WhatsApp Web will show
@@ -95,7 +98,7 @@ python exportAttendance.py --group "My Footy Group" --month 2026-03 --confirm
 
 ```bash
 pip install -r dev-requirements.txt
-pytest
+python -m pytest
 black src/ tests/
 ```
 

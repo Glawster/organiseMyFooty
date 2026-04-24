@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-import sys
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
@@ -11,40 +9,17 @@ import json
 import re
 import time
 
+from organiseMyProjects.logUtils import getLogger as _logUtilsGetLogger  # type: ignore
+
 from attendanceConfig import RuntimeConfig, writeCsv
 from whatsappSelectors import DEFAULT_SELECTORS, WhatsAppSelectors
 
 DIALOG_POLL_INTERVAL_MS = 250  # Poll frequently without busy-waiting the browser page.
 
 
-try:
-    from organiseMyProjects.logUtils import getLogger as _logUtilsGetLogger  # type: ignore
-except Exception:  # pragma: no cover
-    _logUtilsGetLogger = None
-
-
 def getLogger(name: str, dryRun: bool = False):  # type: ignore
-    if _logUtilsGetLogger is not None:
-        # Support both the richer organiseMyProjects logger signature and simpler
-        # variants so console logging still works across installed versions.
-        for kwargs in (
-            {"includeConsole": True, "dryRun": dryRun},
-            {"includeConsole": True},
-            {},
-        ):
-            try:
-                return _logUtilsGetLogger(name, **kwargs)
-            except TypeError:
-                continue
-
-    logger = logging.getLogger(name)
-    if not logger.handlers:
-        logger.setLevel(logging.INFO)
-        handler = logging.StreamHandler(sys.stdout)
-        formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-    return logger
+    """Return the project logger with console output enabled."""
+    return _logUtilsGetLogger(name, includeConsole=True, dryRun=dryRun)
 
 
 @dataclass(frozen=True)

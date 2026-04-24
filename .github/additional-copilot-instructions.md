@@ -71,9 +71,9 @@ in `RuntimeConfig` and threaded through to `AttendanceExporter`.
 
 ### Logging
 
-The module falls back to `stdlib logging` when `organiseMyProjects.logUtils` is
-not installed. New code should follow the same `try / except` pattern used in
-`whatsappAttendance.py` so the tool works stand-alone.
+Use `organiseMyProjects.logUtils` directly for centralized logging. Do not add
+new stdlib logging fallbacks in this repository; tests should stub the
+dependency when needed.
 
 ### Output files
 
