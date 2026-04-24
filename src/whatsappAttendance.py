@@ -45,7 +45,7 @@ class PollTarget:
 class DryRunMixin:
     @property
     def prefix(self) -> str:
-        return "...[] " if self.config.dryRun else "..."
+        return "[] " if self.config.dryRun else ""
 
 
 class AttendanceExporter(DryRunMixin):

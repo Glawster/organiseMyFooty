@@ -269,11 +269,11 @@ class TestCleanVoterNames:
 class TestDryRunPrefix:
     def test_prefix_when_dry_run_true(self):
         exporter = _make_exporter(dryRun=True)
-        assert exporter.prefix == "...[] "
+        assert exporter.prefix == "[] "
 
     def test_prefix_when_dry_run_false(self):
         exporter = _make_exporter(dryRun=False)
-        assert exporter.prefix == "..."
+        assert exporter.prefix == ""
 
 
 # ---------------------------------------------------------------------------
