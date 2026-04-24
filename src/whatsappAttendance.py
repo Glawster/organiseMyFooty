@@ -476,8 +476,7 @@ class AttendanceExporter(DryRunMixin):
             except Exception as exc:
                 lastError = exc
 
-        if lastError is None:
-            raise RuntimeError("failed to interact with poll vote button")
+        assert lastError is not None
         raise lastError
 
     def waitForDialog(self, page):

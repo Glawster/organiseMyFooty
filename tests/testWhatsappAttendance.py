@@ -408,7 +408,7 @@ class TestLoggerInitialisation:
             ("test.logger", {}),
         ]
 
-    def test_stdlib_fallback_adds_stream_handler_once(self, monkeypatch):
+    def test_stdlib_fallback_adds_stream_handler_once(self, monkeypatch, capsys):
         monkeypatch.setattr(whatsappAttendance, "_logUtilsGetLogger", None)
         logger_name = "test.whatsappAttendance.logger"
         logger = logging.getLogger(logger_name)
@@ -429,6 +429,9 @@ class TestLoggerInitialisation:
                 == 1
             )
             assert logger.handlers[0].stream is sys.stdout
+            result.info("stdout check")
+            captured = capsys.readouterr()
+            assert "stdout check" in captured.out
         finally:
             logger.handlers.clear()
             logger.handlers.extend(old_handlers)
