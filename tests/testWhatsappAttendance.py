@@ -382,21 +382,26 @@ class TestLoggerInitialisation:
 
 class TestPollTargetOpening:
     class FakePollButtonLocator:
-        def __init__(self, name: str):
+        def __init__(self, name: str, should_fail: bool = False):
             self.name = name
             self.first = self
             self.clicked = False
             self.scrolled = False
             self.filtered_by = []
+            self.should_fail = should_fail
 
         def filter(self, has_text=None):
             self.filtered_by.append(has_text)
             return self
 
         def scroll_into_view_if_needed(self, timeout=None):
+            if self.should_fail:
+                raise RuntimeError(f"scroll failed for {self.name}")
             self.scrolled = True
 
         def click(self, timeout=None):
+            if self.should_fail:
+                raise RuntimeError(f"click failed for {self.name}")
             self.clicked = True
 
     class FakePollPage:
@@ -438,6 +443,18 @@ class TestPollTargetOpening:
         assert page.requested_selectors[0] == stable_selector
         assert stable_locator.scrolled is True
         assert stable_locator.clicked is True
+
+    def test_open_poll_target_raises_last_error_when_all_candidates_fail(self):
+        exporter = _make_exporter()
+        target = PollTarget(
+            selector='div:has-text("View votes")',
+            sourceText="Training\nView votes",
+        )
+        generic_locator = self.FakePollButtonLocator(target.selector, should_fail=True)
+        page = self.FakePollPage({target.selector: generic_locator})
+
+        with pytest.raises(RuntimeError, match="scroll failed"):
+            exporter.openPollTarget(page, target)
 
 
 # ---------------------------------------------------------------------------

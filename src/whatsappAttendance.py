@@ -473,7 +473,7 @@ class AttendanceExporter(DryRunMixin):
                 lastError = exc
 
         if lastError is None:
-            raise RuntimeError("unable to build poll vote locator")
+            raise RuntimeError("failed to interact with poll vote button")
         raise lastError
 
     def waitForDialog(self, page):
