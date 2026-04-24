@@ -467,7 +467,7 @@ class AttendanceExporter(DryRunMixin):
         if pollTarget.selector != self.buildPollButtonSelector(pollTarget):
             candidateLocators.append(page.locator(pollTarget.selector).first)
 
-        lastError: Exception | None = None
+        lastError: Exception = RuntimeError("failed to interact with poll vote button")
         for locator in candidateLocators:
             try:
                 locator.scroll_into_view_if_needed(timeout=self.config.timeoutMs)
@@ -476,7 +476,6 @@ class AttendanceExporter(DryRunMixin):
             except Exception as exc:
                 lastError = exc
 
-        assert lastError is not None
         raise lastError
 
     def waitForDialog(self, page):
