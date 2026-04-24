@@ -383,6 +383,13 @@ class AttendanceExporter(DryRunMixin):
             self.logger.info(
                 "%spoll selector '%s' matched %s item(s)", self.prefix, selector, count
             )
+            if count:
+                self.logger.info(
+                    "%sscanning %s poll candidate(s) for selector '%s'",
+                    self.prefix,
+                    count,
+                    selector,
+                )
 
             for index in range(count):
                 item = locator.nth(index)
@@ -402,7 +409,21 @@ class AttendanceExporter(DryRunMixin):
                         messageTestId=messageTestId or "",
                     )
                 )
+                processed = index + 1
+                if count > 25 and (processed % 25 == 0 or processed == count):
+                    self.logger.info(
+                        "%sprocessed %s/%s poll candidate(s) for selector '%s'",
+                        self.prefix,
+                        processed,
+                        count,
+                        selector,
+                    )
 
+        self.logger.info(
+            "%spoll discovery complete: %s unique poll target(s)",
+            self.prefix,
+            len(pollLocators),
+        )
         return pollLocators
 
     def extractMessageTestId(self, locator) -> str:

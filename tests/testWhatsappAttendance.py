@@ -508,6 +508,86 @@ class TestPollTargetOpening:
 
 
 # ---------------------------------------------------------------------------
+# findPollCards
+# ---------------------------------------------------------------------------
+
+
+class TestFindPollCards:
+    class FakeLogger:
+        def __init__(self):
+            self.messages = []
+
+        def info(self, message, *args):
+            self.messages.append(message % args if args else message)
+
+    class FakePollItem:
+        def __init__(self, text: str):
+            self.text = text
+
+        def inner_text(self, timeout=None):
+            return self.text
+
+    class FakePollCollection:
+        def __init__(self, texts):
+            self.texts = list(texts)
+
+        def count(self):
+            return len(self.texts)
+
+        def nth(self, index):
+            return TestFindPollCards.FakePollItem(self.texts[index])
+
+    class FakePollPage:
+        def __init__(self, selector_map):
+            self.selector_map = selector_map
+
+        def locator(self, selector):
+            return self.selector_map[selector]
+
+    def test_logs_progress_during_large_poll_candidate_scan(self, monkeypatch):
+        exporter = _make_exporter()
+        exporter.logger = self.FakeLogger()
+        monkeypatch.setattr(exporter, "extractMessageTestId", lambda locator: "")
+
+        selector_map = {
+            '[data-testid="poll-view-votes"]': self.FakePollCollection([]),
+            'div[role="button"]:has-text("View votes")': self.FakePollCollection([]),
+            'div:has-text("View votes")': self.FakePollCollection(
+                [f"Training {index}" for index in range(60)]
+            ),
+        }
+        page = self.FakePollPage(selector_map)
+
+        result = exporter.findPollCards(page)
+
+        assert len(result) == 60
+        assert any(
+            "scanning 60 poll candidate(s) for selector 'div:has-text(\"View votes\")'"
+            in message
+            for message in exporter.logger.messages
+        )
+        assert any(
+            "processed 25/60 poll candidate(s) for selector 'div:has-text(\"View votes\")'"
+            in message
+            for message in exporter.logger.messages
+        )
+        assert any(
+            "processed 50/60 poll candidate(s) for selector 'div:has-text(\"View votes\")'"
+            in message
+            for message in exporter.logger.messages
+        )
+        assert any(
+            "processed 60/60 poll candidate(s) for selector 'div:has-text(\"View votes\")'"
+            in message
+            for message in exporter.logger.messages
+        )
+        assert any(
+            "poll discovery complete: 60 unique poll target(s)" in message
+            for message in exporter.logger.messages
+        )
+
+
+# ---------------------------------------------------------------------------
 # waitForDialog / closeDialog
 # ---------------------------------------------------------------------------
 
