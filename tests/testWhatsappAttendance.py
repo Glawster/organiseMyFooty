@@ -262,21 +262,6 @@ class TestCleanVoterNames:
 
 
 # ---------------------------------------------------------------------------
-# DryRunMixin.prefix
-# ---------------------------------------------------------------------------
-
-
-class TestDryRunPrefix:
-    def test_prefix_when_dry_run_true(self):
-        exporter = _make_exporter(dryRun=True)
-        assert exporter.prefix == "[] "
-
-    def test_prefix_when_dry_run_false(self):
-        exporter = _make_exporter(dryRun=False)
-        assert exporter.prefix == ""
-
-
-# ---------------------------------------------------------------------------
 # extractLikelyDateText
 # ---------------------------------------------------------------------------
 

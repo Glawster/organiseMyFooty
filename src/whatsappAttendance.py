@@ -42,13 +42,7 @@ class PollTarget:
     messageTestId: str = ""
 
 
-class DryRunMixin:
-    @property
-    def prefix(self) -> str:
-        return "[] " if self.config.dryRun else ""
-
-
-class AttendanceExporter(DryRunMixin):
+class AttendanceExporter:
     def __init__(
         self, config: RuntimeConfig, selectors: WhatsAppSelectors | None = None
     ):
@@ -59,33 +53,25 @@ class AttendanceExporter(DryRunMixin):
         )
 
     def run(self) -> None:
-        self.logger.info(
-            "%sstarting export for group: %s", self.prefix, self.config.groupName
-        )
-        self.logger.info(
-            "%smonth window: %s", self.prefix, self.config.monthWindow.monthKey
-        )
-        self.logger.info("%soutput dir: %s", self.prefix, self.config.outputDir)
+        self.logger.info("starting export for group: %s", self.config.groupName)
+        self.logger.info("month window: %s", self.config.monthWindow.monthKey)
+        self.logger.info("output dir: %s", self.config.outputDir)
 
         if self.config.dryRun:
             self.logger.info(
-                "%sdry run enabled; browser automation will still inspect the UI but will not overwrite exports",
-                self.prefix,
+                "dry run enabled; browser automation will still inspect the UI but will not overwrite exports",
             )
 
         records = self.collectPollAttendance()
-        self.logger.info("%spoll vote rows collected: %s", self.prefix, len(records))
+        self.logger.info("poll vote rows collected: %s", len(records))
 
         rawRows = [asdict(record) for record in records]
         summaryRows = self.buildSummaryRows(records)
 
         if self.config.dryRun:
+            self.logger.info("would write polls.csv rows: %s", len(rawRows))
             self.logger.info(
-                "%swould write polls.csv rows: %s", self.prefix, len(rawRows)
-            )
-            self.logger.info(
-                "%swould write attendanceSummary.csv rows: %s",
-                self.prefix,
+                "would write attendanceSummary.csv rows: %s",
                 len(summaryRows),
             )
             self.writePreviewJson(rawRows, summaryRows)
@@ -102,7 +88,7 @@ class AttendanceExporter(DryRunMixin):
             ["name", "yesCount", "noCount", "totalVotes", "pollsResponded"],
         )
         self.writePreviewJson(rawRows, summaryRows)
-        self.logger.info("%sexport complete", self.prefix)
+        self.logger.info("export complete")
 
     def writePreviewJson(self, rawRows: list[dict], summaryRows: list[dict]) -> None:
         previewPath = self.config.outputDir / "exportPreview.json"
@@ -113,7 +99,7 @@ class AttendanceExporter(DryRunMixin):
             "summaryRows": summaryRows,
         }
         if self.config.dryRun:
-            self.logger.info("%swould write preview json: %s", self.prefix, previewPath)
+            self.logger.info("would write preview json: %s", previewPath)
             return
 
         previewPath.write_text(
@@ -168,8 +154,7 @@ class AttendanceExporter(DryRunMixin):
         pollCount = 0
 
         self.logger.info(
-            "%slaunching browser (user_data_dir=%s, headless=%s, channel=%s)",
-            self.prefix,
+            "launching browser (user_data_dir=%s, headless=%s, channel=%s)",
             self.config.userDataDir,
             self.config.headless,
             self.config.browserChannel or "default",
@@ -184,19 +169,15 @@ class AttendanceExporter(DryRunMixin):
             )
             try:
                 page = browserContext.new_page()
-                self.logger.info(
-                    "%snavigating to %s", self.prefix, self.selectors.webUrl
-                )
+                self.logger.info("navigating to %s", self.selectors.webUrl)
                 page.goto(self.selectors.webUrl)
-                self.logger.info("%spage loaded: %s", self.prefix, page.url)
+                self.logger.info("page loaded: %s", page.url)
                 self.waitForWhatsAppReady(page)
                 self.openGroup(page, self.config.groupName)
                 self.scrollChatHistory(page)
 
                 pollLocators = self.findPollCards(page)
-                self.logger.info(
-                    "%scandidate poll cards found: %s", self.prefix, len(pollLocators)
-                )
+                self.logger.info("candidate poll cards found: %s", len(pollLocators))
 
                 for index, pollTarget in enumerate(pollLocators, start=1):
                     if (
@@ -204,8 +185,7 @@ class AttendanceExporter(DryRunMixin):
                         and pollCount >= self.config.limitPolls
                     ):
                         self.logger.info(
-                            "%spoll limit reached: %s",
-                            self.prefix,
+                            "poll limit reached: %s",
                             self.config.limitPolls,
                         )
                         break
@@ -218,13 +198,12 @@ class AttendanceExporter(DryRunMixin):
                         not in sourceText.lower()
                     ):
                         self.logger.info(
-                            "%sskipping poll due to title filter: %s",
-                            self.prefix,
+                            "skipping poll due to title filter: %s",
                             self.config.pollTitleFilter,
                         )
                         continue
 
-                    self.logger.info("%sopening poll %s", self.prefix, index)
+                    self.logger.info("opening poll %s", index)
                     try:
                         self.openPollTarget(page, pollTarget)
                     except Exception as exc:
@@ -235,8 +214,7 @@ class AttendanceExporter(DryRunMixin):
                         dialog = self.waitForDialog(page)
                     except TimeoutError:
                         self.logger.warning(
-                            "%sunable to locate votes dialog for poll %s; skipping",
-                            self.prefix,
+                            "unable to locate votes dialog for poll %s; skipping",
                             index,
                         )
                         self.closeDialog(page, dialog=None)
@@ -278,8 +256,7 @@ class AttendanceExporter(DryRunMixin):
                             )
 
                     self.logger.info(
-                        "%spoll %s: title=%r, yes=%s voter(s), no=%s voter(s)",
-                        self.prefix,
+                        "poll %s: title=%r, yes=%s voter(s), no=%s voter(s)",
                         index,
                         pollTitle,
                         len(yesVoters),
@@ -296,12 +273,11 @@ class AttendanceExporter(DryRunMixin):
 
     def waitForWhatsAppReady(self, page) -> None:
         page.wait_for_load_state("domcontentloaded")
-        self.logger.info("%swaiting for WhatsApp Web to be ready...", self.prefix)
+        self.logger.info("waiting for WhatsApp Web to be ready...")
         self.logger.info(
-            "%s(first run: if a QR code appears in the browser window, open WhatsApp on "
+            "(first run: if a QR code appears in the browser window, open WhatsApp on "
             "your phone → Linked devices → Link a device and scan it; use --timeout-ms "
             "to allow more time, e.g. --timeout-ms 300000)",
-            self.prefix,
         )
         deadline = time.time() + max(120, self.config.timeoutMs / 1000)
         startTime = time.time()
@@ -311,8 +287,7 @@ class AttendanceExporter(DryRunMixin):
             elapsed = int(time.time() - startTime)
             if elapsed - lastProgressLog >= 10:
                 self.logger.info(
-                    "%sstill waiting for whatsapp web (%ss elapsed)...",
-                    self.prefix,
+                    "still waiting for whatsapp web (%ss elapsed)...",
                     elapsed,
                 )
                 lastProgressLog = elapsed
@@ -320,9 +295,7 @@ class AttendanceExporter(DryRunMixin):
                 try:
                     locator = page.locator(selector).first
                     if locator.is_visible(timeout=1000):
-                        self.logger.info(
-                            "%swhatsapp ready via selector: %s", self.prefix, selector
-                        )
+                        self.logger.info("whatsapp ready via selector: %s", selector)
                         return
                 except Exception:
                     continue
@@ -335,7 +308,7 @@ class AttendanceExporter(DryRunMixin):
         )
 
     def openGroup(self, page, groupName: str) -> None:
-        self.logger.info("%sopening group: %s", self.prefix, groupName)
+        self.logger.info("opening group: %s", groupName)
 
         lastError: Optional[Exception] = None
         for selector in self.selectors.iterSearchSelectors():
@@ -345,8 +318,7 @@ class AttendanceExporter(DryRunMixin):
                 searchBox.fill("")
                 searchBox.type(groupName, delay=40)
                 self.logger.info(
-                    "%ssearch box ready (selector: %s), typed group name",
-                    self.prefix,
+                    "search box ready (selector: %s), typed group name",
                     selector,
                 )
                 break
@@ -358,17 +330,15 @@ class AttendanceExporter(DryRunMixin):
 
         candidate = page.get_by_text(groupName, exact=True).first
         candidate.click(timeout=self.config.timeoutMs)
-        self.logger.info("%sgroup chat opened", self.prefix)
+        self.logger.info("group chat opened")
 
     def scrollChatHistory(self, page, scrollPasses: int = 12) -> None:
-        self.logger.info("%sscrolling chat history to load older polls...", self.prefix)
+        self.logger.info("scrolling chat history to load older polls...")
         for i in range(scrollPasses):
             page.mouse.wheel(0, -2000)
             page.wait_for_timeout(500)
             if (i + 1) % 4 == 0 or i + 1 == scrollPasses:
-                self.logger.info(
-                    "%sscroll pass %s/%s", self.prefix, i + 1, scrollPasses
-                )
+                self.logger.info("scroll pass %s/%s", i + 1, scrollPasses)
 
     def findPollCards(self, page) -> list[PollTarget]:
         pollLocators: list[PollTarget] = []
@@ -381,13 +351,10 @@ class AttendanceExporter(DryRunMixin):
             except Exception:
                 continue
 
-            self.logger.info(
-                "%spoll selector '%s' matched %s item(s)", self.prefix, selector, count
-            )
+            self.logger.info("poll selector '%s' matched %s item(s)", selector, count)
             if count:
                 self.logger.info(
-                    "%sscanning %s poll candidate(s) for selector '%s'",
-                    self.prefix,
+                    "scanning %s poll candidate(s) for selector '%s'",
                     count,
                     selector,
                 )
@@ -415,16 +382,14 @@ class AttendanceExporter(DryRunMixin):
                     processed % POLL_PROGRESS_INTERVAL == 0
                 ):
                     self.logger.info(
-                        "%sprocessed %s/%s poll candidate(s) for selector '%s'",
-                        self.prefix,
+                        "processed %s/%s poll candidate(s) for selector '%s'",
                         processed,
                         count,
                         selector,
                     )
 
         self.logger.info(
-            "%spoll discovery complete: %s unique poll target(s)",
-            self.prefix,
+            "poll discovery complete: %s unique poll target(s)",
             len(pollLocators),
         )
         return pollLocators
@@ -438,8 +403,7 @@ class AttendanceExporter(DryRunMixin):
             return container.get_attribute("data-testid") or ""
         except Exception as exc:
             self.logger.debug(
-                "%sunable to extract poll message test id: %s",
-                self.prefix,
+                "unable to extract poll message test id: %s",
                 exc,
             )
             return ""
@@ -505,8 +469,7 @@ class AttendanceExporter(DryRunMixin):
                     dialog = page.locator(selector).last
                     if dialog.is_visible(timeout=probeTimeoutMs):
                         self.logger.info(
-                            "%svotes dialog opened via selector: %s",
-                            self.prefix,
+                            "votes dialog opened via selector: %s",
                             selector,
                         )
                         return dialog
@@ -615,16 +578,14 @@ class AttendanceExporter(DryRunMixin):
                 if control.is_visible(timeout=1000):
                     control.click(timeout=self.config.timeoutMs)
                     page.wait_for_timeout(400)
-                    self.logger.info(
-                        "%sclosed dialog via selector: %s", self.prefix, selector
-                    )
+                    self.logger.info("closed dialog via selector: %s", selector)
                     return
             except Exception:
                 continue
 
         page.keyboard.press("Escape")
         page.wait_for_timeout(400)
-        self.logger.info("%sclosed dialog via Escape key", self.prefix)
+        self.logger.info("closed dialog via Escape key")
 
     def deduplicateRecords(self, records: list[PollRecord]) -> list[PollRecord]:
         output: list[PollRecord] = []
@@ -640,7 +601,5 @@ class AttendanceExporter(DryRunMixin):
                 continue
             seen.add(key)
             output.append(record)
-        self.logger.info(
-            "%sdeduplication: %s → %s records", self.prefix, len(records), len(output)
-        )
+        self.logger.info("deduplication: %s → %s records", len(records), len(output))
         return output
