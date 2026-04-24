@@ -544,7 +544,7 @@ class TestFindPollCards:
         def locator(self, selector):
             return self.selector_map[selector]
 
-    def test_logs_progress_during_large_poll_candidate_scan(self, monkeypatch):
+    def test_logs_progress_for_large_poll_scan(self, monkeypatch):
         exporter = _make_exporter()
         exporter.logger = self.StubLogger()
         monkeypatch.setattr(exporter, "extractMessageTestId", lambda locator: "")
@@ -573,11 +573,6 @@ class TestFindPollCards:
         )
         assert any(
             "processed 50/60 poll candidate(s) for selector 'div:has-text(\"View votes\")'"
-            in message
-            for message in exporter.logger.messages
-        )
-        assert any(
-            "processed 60/60 poll candidate(s) for selector 'div:has-text(\"View votes\")'"
             in message
             for message in exporter.logger.messages
         )

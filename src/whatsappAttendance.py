@@ -413,7 +413,6 @@ class AttendanceExporter(DryRunMixin):
                 processed = index + 1
                 if count > POLL_SCAN_PROGRESS_LOG_INTERVAL and (
                     processed % POLL_SCAN_PROGRESS_LOG_INTERVAL == 0
-                    or processed == count
                 ):
                     self.logger.info(
                         "%sprocessed %s/%s poll candidate(s) for selector '%s'",
