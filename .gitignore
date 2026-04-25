@@ -1,3 +1,6 @@
+# app specifics
+output/
+
 __pycache__/
 logs/
 *.log

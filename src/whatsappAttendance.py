@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
-from datetime import datetime
+from collections import OrderedDict, defaultdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional, Iterable
+from typing import Iterable, Optional
 import csv
 import json
 import re
@@ -39,6 +39,14 @@ class PollRecord:
     sourceHint: str
 
 
+@dataclass(frozen=True)
+class PollSession:
+    pollKey: str
+    pollTitle: str
+    weekNumber: int
+    sessionName: str
+
+
 class DryRunMixin:
     @property
     def prefix(self) -> str:
@@ -51,7 +59,7 @@ class AttendanceExporter(DryRunMixin):
     ):
         self.config = config
         self.selectors = selectors or DEFAULT_SELECTORS
-        self.logger = getLogger("organiseMyWhatsApp.exportAttendance")
+        self.logger = getLogger("organiseMyFooty.exportAttendance")
 
     def run(self) -> None:
         self.logger.info(
@@ -64,7 +72,7 @@ class AttendanceExporter(DryRunMixin):
 
         if self.config.dryRun:
             self.logger.info(
-                "%sdry run enabled; browser automation will still inspect the UI but will not overwrite exports",
+                "%sdry run enabled; browser automation will inspect the UI but will not overwrite exports",
                 self.prefix,
             )
 
@@ -73,6 +81,7 @@ class AttendanceExporter(DryRunMixin):
 
         rawRows = [asdict(record) for record in records]
         summaryRows = self.buildSummaryRows(records)
+        reportRows = self.buildAttendanceReportRows(records)
 
         if self.config.dryRun:
             self.logger.info(
@@ -83,7 +92,12 @@ class AttendanceExporter(DryRunMixin):
                 self.prefix,
                 len(summaryRows),
             )
-            self.writePreviewJson(rawRows, summaryRows)
+            self.logger.info(
+                "%swould write attendanceReport.csv rows: %s",
+                self.prefix,
+                max(0, len(reportRows) - 2),
+            )
+            self.writePreviewJson(rawRows, summaryRows, reportRows)
             return
 
         writeCsv(
@@ -96,16 +110,26 @@ class AttendanceExporter(DryRunMixin):
             summaryRows,
             ["name", "yesCount", "noCount", "totalVotes", "pollsResponded"],
         )
-        self.writePreviewJson(rawRows, summaryRows)
+        self.writeAttendanceReportCsv(
+            self.config.outputDir / "attendanceReport.csv",
+            reportRows,
+        )
+        self.writePreviewJson(rawRows, summaryRows, reportRows)
         self.logger.info("%sexport complete", self.prefix)
 
-    def writePreviewJson(self, rawRows: list[dict], summaryRows: list[dict]) -> None:
+    def writePreviewJson(
+        self,
+        rawRows: list[dict],
+        summaryRows: list[dict],
+        reportRows: list[list[str]],
+    ) -> None:
         previewPath = self.config.outputDir / "exportPreview.json"
         payload = {
             "groupName": self.config.groupName,
             "month": self.config.monthWindow.monthKey,
             "rawPollRows": rawRows,
             "summaryRows": summaryRows,
+            "attendanceReportRows": reportRows,
         }
         if self.config.dryRun:
             self.logger.info("%swould write preview json: %s", self.prefix, previewPath)
@@ -114,6 +138,12 @@ class AttendanceExporter(DryRunMixin):
         previewPath.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
         )
+
+    def writeAttendanceReportCsv(self, path: Path, rows: list[list[str]]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerows(rows)
 
     def buildSummaryRows(self, records: list[PollRecord]) -> list[dict]:
         summary: dict[str, dict[str, int | set[str]]] = {}
@@ -135,7 +165,7 @@ class AttendanceExporter(DryRunMixin):
             row["pollsResponded"].add(f"{record.pollTitle}|{record.pollDateText}")  # type: ignore[union-attr]
 
         outputRows: list[dict] = []
-        for voterName in sorted(summary):
+        for voterName in sorted(summary, key=str.casefold):
             row = summary[voterName]
             outputRows.append(
                 {
@@ -148,11 +178,97 @@ class AttendanceExporter(DryRunMixin):
             )
         return outputRows
 
+    def buildAttendanceReportRows(self, records: list[PollRecord]) -> list[list[str]]:
+        """Build a two-row-header report with dynamic sessions.
+
+        Sessions are discovered from scraped poll titles. Week numbers are inferred
+        per repeated session name: the first poll for a session is week 1, the
+        second poll for that same session is week 2, and so on.
+        """
+        if not records:
+            return [[""], ["name"]]
+
+        pollSessions = self.buildPollSessions(records)
+        sessionNames = self.extractOrderedSessionNames(pollSessions)
+        maxWeek = max(session.weekNumber for session in pollSessions.values())
+
+        weekHeader = [""]
+        sessionHeader = ["name"]
+        for weekNumber in range(1, maxWeek + 1):
+            for sessionIndex, sessionName in enumerate(sessionNames):
+                weekHeader.append(f"week {weekNumber}" if sessionIndex == 0 else "")
+                sessionHeader.append(sessionName)
+
+        voterNames = sorted({record.voterName for record in records}, key=str.casefold)
+        attendance = self.buildAttendanceLookup(records, pollSessions)
+
+        rows = [weekHeader, sessionHeader]
+        for voterName in voterNames:
+            row = [voterName]
+            for weekNumber in range(1, maxWeek + 1):
+                for sessionName in sessionNames:
+                    row.append(attendance.get((voterName, weekNumber, sessionName), ""))
+            rows.append(row)
+
+        return rows
+
+    def buildPollSessions(
+        self, records: list[PollRecord]
+    ) -> OrderedDict[str, PollSession]:
+        pollKeys: OrderedDict[str, str] = OrderedDict()
+        for record in records:
+            pollKeys.setdefault(self.buildPollKey(record), record.pollTitle)
+
+        sessionCounts: defaultdict[str, int] = defaultdict(int)
+        pollSessions: OrderedDict[str, PollSession] = OrderedDict()
+
+        for pollKey, pollTitle in pollKeys.items():
+            sessionName = self.extractSessionName(pollTitle)
+            sessionCounts[sessionName] += 1
+            pollSessions[pollKey] = PollSession(
+                pollKey=pollKey,
+                pollTitle=pollTitle,
+                weekNumber=sessionCounts[sessionName],
+                sessionName=sessionName,
+            )
+
+        return pollSessions
+
+    def extractOrderedSessionNames(
+        self, pollSessions: OrderedDict[str, PollSession]
+    ) -> list[str]:
+        sessions: OrderedDict[str, None] = OrderedDict()
+        for pollSession in pollSessions.values():
+            sessions.setdefault(pollSession.sessionName, None)
+        return list(sessions.keys())
+
+    def buildAttendanceLookup(
+        self,
+        records: list[PollRecord],
+        pollSessions: OrderedDict[str, PollSession],
+    ) -> dict[tuple[str, int, str], str]:
+        attendance: dict[tuple[str, int, str], str] = {}
+        for record in records:
+            pollSession = pollSessions[self.buildPollKey(record)]
+            key = (record.voterName, pollSession.weekNumber, pollSession.sessionName)
+            current = attendance.get(key, "")
+
+            if record.option.lower() == "yes":
+                attendance[key] = "yes"
+            elif record.option.lower() == "no" and current != "yes":
+                attendance[key] = "no"
+
+        return attendance
+
+    def buildPollKey(self, record: PollRecord) -> str:
+        return f"{record.pollTitle}|{record.pollDateText}|{record.sourceHint[:80]}"
+
+    def extractSessionName(self, pollTitle: str) -> str:
+        title = " ".join(pollTitle.split()).strip()
+        return re.sub(r"\s+", " ", title) or "unknown session"
+
     def collectPollAttendance(self) -> list[PollRecord]:
-        from playwright.sync_api import (
-            sync_playwright,
-            TimeoutError as PlaywrightTimeoutError,
-        )
+        from playwright.sync_api import sync_playwright
 
         records: list[PollRecord] = []
         pollCount = 0
@@ -223,6 +339,8 @@ class AttendanceExporter(DryRunMixin):
                             continue
 
                     dialog = self.waitForDialog(page)
+                    self.expandAllVoters(dialog)
+
                     pollTitle = (
                         self.extractPollTitle(dialog, sourceText=sourceText)
                         or "unknown poll"
@@ -349,17 +467,38 @@ class AttendanceExporter(DryRunMixin):
                 continue
         raise TimeoutError("unable to locate votes dialog")
 
-    def extractPollTitle(self, dialog, sourceText: str = "") -> str:
-        try:
-            headings = dialog.locator("h1, h2, h3, [role='heading']")
-            if headings.count() > 0:
-                title = headings.first.inner_text(timeout=1000).strip()
-                if title:
-                    return title
-        except Exception:
-            pass
+    def expandAllVoters(self, dialog) -> None:
+        """Expand all lazy-loaded voter rows inside the current poll dialog."""
+        for _ in range(10):
+            clicked = False
+            try:
+                buttons = dialog.get_by_text(re.compile(r"^See all", re.IGNORECASE))
+                count = buttons.count()
+            except Exception:
+                break
 
+            for index in range(count):
+                try:
+                    button = buttons.nth(index)
+                    if button.is_visible(timeout=500):
+                        button.click(timeout=self.config.timeoutMs)
+                        dialog.page.wait_for_timeout(300)
+                        clicked = True
+                except Exception:
+                    continue
+
+            if not clicked:
+                break
+
+    def extractPollTitle(self, dialog, sourceText: str = "") -> str:
         lines = [line.strip() for line in sourceText.splitlines() if line.strip()]
+
+        # Typical poll card text:
+        # 0 = sender
+        # 1 = poll title/session
+        # 2 = Select one or more
+        if len(lines) >= 2:
+            return lines[1]
         if lines:
             return lines[0]
         return "unknown poll"
@@ -372,9 +511,9 @@ class AttendanceExporter(DryRunMixin):
         """
         Heuristic extractor.
 
-        The exact DOM for poll results may change.
-        This implementation looks for a visible section with the option label,
-        then collects person-like rows beneath it until the next option heading.
+        The exact DOM for poll results may change. This implementation looks for
+        a visible section with the option label, then collects person-like rows
+        beneath it until the next option heading.
         """
         optionNames = tuple(optionTexts)
         dialogText = dialog.inner_text(timeout=self.config.timeoutMs)
@@ -403,17 +542,17 @@ class AttendanceExporter(DryRunMixin):
         return self.cleanVoterNames(captured)
 
     def looksLikeVoteCount(self, line: str) -> bool:
-        compact = line.replace(" ", "")
-        return compact.isdigit() or bool(re.fullmatch(r"\d+votes?", line.lower()))
+        lowered = line.lower().strip()
+        compact = lowered.replace(" ", "")
+        return compact.isdigit() or bool(re.fullmatch(r"\d+votes?", lowered))
 
     def looksLikeSystemText(self, line: str) -> bool:
-        lowered = line.lower()
+        lowered = line.lower().strip()
         systemFragments = (
             "select one or more",
             "view votes",
-            "votes",
+            "poll details",
             "message",
-            "poll",
         )
         return any(fragment in lowered for fragment in systemFragments)
 
@@ -429,8 +568,14 @@ class AttendanceExporter(DryRunMixin):
                 continue
             if re.search(r"\b\d{1,2}:\d{2}\b", value):
                 continue
-            if value.lower() in {"yes", "no"}:
+            if value.lower() in {"yes", "no", "you"}:
                 continue
+            if value.lower().startswith("see all"):
+                continue
+            if value.lower().endswith("vote") or value.lower().endswith("votes"):
+                continue
+            if value.startswith("~ "):
+                value = value[2:].strip()
             if value in seen:
                 continue
             seen.add(value)

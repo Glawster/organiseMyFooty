@@ -1,15 +1,17 @@
 """Tests for non-browser helper methods in whatsappAttendance module."""
+
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 
 from attendanceConfig import MonthWindow, RuntimeConfig
-from whatsappAttendance import AttendanceExporter, PollRecord
+import whatsappAttendance
+from whatsappAttendance import AttendanceExporter, PollRecord, PollTarget
 
 from datetime import date
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -260,15 +262,391 @@ class TestCleanVoterNames:
 
 
 # ---------------------------------------------------------------------------
-# DryRunMixin.prefix
+# extractLikelyDateText
 # ---------------------------------------------------------------------------
 
 
-class TestDryRunPrefix:
-    def test_prefix_when_dry_run_true(self):
-        exporter = _make_exporter(dryRun=True)
-        assert exporter.prefix == "...[] "
+class TestExtractLikelyDateText:
+    def test_extracts_time_from_source_text(self):
+        exporter = _make_exporter()
+        result = exporter.extractLikelyDateText("Training tonight\n10:30\nYes")
+        assert result == "10:30"
 
-    def test_prefix_when_dry_run_false(self):
-        exporter = _make_exporter(dryRun=False)
-        assert exporter.prefix == "..."
+    def test_extracts_single_digit_hour(self):
+        exporter = _make_exporter()
+        result = exporter.extractLikelyDateText("Poll sent 9:05 am")
+        assert result == "9:05"
+
+    def test_returns_empty_string_when_no_time(self):
+        exporter = _make_exporter()
+        result = exporter.extractLikelyDateText("Training tonight")
+        assert result == ""
+
+    def test_does_not_match_partial_numbers(self):
+        exporter = _make_exporter()
+        # "1234:56" is not a plausible time; the regex requires word boundaries
+        # on both sides of the pattern, so it must not be surrounded by word
+        # characters (digits or letters).
+        result = exporter.extractLikelyDateText("code1234:56end")
+        assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# extractPollSummaryText / extractMessageTestId
+# ---------------------------------------------------------------------------
+
+
+class TestPollTargetHelpers:
+    class FakeMessageContainer:
+        def __init__(self, messageTestId: str | None):
+            self.messageTestId = messageTestId
+            self.first = self
+
+        def get_attribute(self, name):
+            assert name == "data-testid"
+            return self.messageTestId
+
+    class FakePollLocator:
+        def __init__(
+            self, messageTestId: str | None = None, should_raise: bool = False
+        ):
+            self.messageTestId = messageTestId
+            self.should_raise = should_raise
+
+        def locator(self, selector):
+            assert selector.startswith("xpath=ancestor-or-self::*")
+            if self.should_raise:
+                raise RuntimeError("no ancestor")
+            return TestPollTargetHelpers.FakeMessageContainer(self.messageTestId)
+
+    def test_extract_poll_summary_text_returns_first_non_empty_line(self):
+        exporter = _make_exporter()
+
+        assert (
+            exporter.extractPollSummaryText("\n  \nTraining Night\nView votes")
+            == "Training Night"
+        )
+
+    def test_extract_poll_summary_text_returns_empty_string_when_no_content(self):
+        exporter = _make_exporter()
+
+        assert exporter.extractPollSummaryText("\n   \n") == ""
+        assert exporter.extractPollSummaryText("") == ""
+
+    def test_extract_message_test_id_returns_value_when_present(self):
+        exporter = _make_exporter()
+        locator = self.FakePollLocator(messageTestId="conv-msg-123")
+
+        assert exporter.extractMessageTestId(locator) == "conv-msg-123"
+
+    def test_extract_message_test_id_returns_empty_string_on_failure(self):
+        exporter = _make_exporter()
+
+        assert (
+            exporter.extractMessageTestId(self.FakePollLocator(messageTestId=None))
+            == ""
+        )
+        assert (
+            exporter.extractMessageTestId(self.FakePollLocator(should_raise=True)) == ""
+        )
+
+
+# ---------------------------------------------------------------------------
+# logger initialisation
+# ---------------------------------------------------------------------------
+
+
+class TestLoggerInitialisation:
+    def test_passes_include_console_true_to_log_utils(self, monkeypatch):
+        captured = {}
+
+        def fake_get_logger(name, **kwargs):
+            captured["name"] = name
+            captured["kwargs"] = kwargs
+            return "logger"
+
+        monkeypatch.setattr(whatsappAttendance, "_logUtilsGetLogger", fake_get_logger)
+
+        logger = whatsappAttendance.getLogger("test.logger", dryRun=True)
+
+        assert logger == "logger"
+        assert captured == {
+            "name": "test.logger",
+            "kwargs": {"includeConsole": True, "dryRun": True},
+        }
+
+    @pytest.mark.parametrize("dry_run", [False, True])
+    def test_passes_dry_run_state_to_log_utils(self, monkeypatch, dry_run):
+        captured = {}
+
+        def fake_get_logger(name, **kwargs):
+            captured["name"] = name
+            captured["kwargs"] = kwargs
+            return "logger"
+
+        monkeypatch.setattr(whatsappAttendance, "_logUtilsGetLogger", fake_get_logger)
+
+        logger = whatsappAttendance.getLogger("test.logger", dryRun=dry_run)
+
+        assert logger == "logger"
+        assert captured == {
+            "name": "test.logger",
+            "kwargs": {"includeConsole": True, "dryRun": dry_run},
+        }
+
+
+class TestLogUtilsTestStub:
+    def test_conftest_installs_log_utils_stub(self):
+        log_utils = sys.modules["organiseMyProjects.logUtils"]
+
+        logger = log_utils.getLogger("stub.logger", includeConsole=True, dryRun=True)
+
+        assert logger.name == "stub.logger"
+        assert logger.kwargs == {"includeConsole": True, "dryRun": True}
+
+        assert logger.info("message") is None
+        assert logger.warning("message") is None
+        assert logger.debug("message") is None
+        assert logger.action("message") is None
+        assert logger.doing("message") is None
+        assert logger.done("message") is None
+        assert logger.value("name", "value") is None
+
+
+class TestPollTargetOpening:
+    class FakePollButtonLocator:
+        def __init__(self, name: str, should_fail: bool = False):
+            self.name = name
+            self.first = self
+            self.clicked = False
+            self.scrolled = False
+            self.filtered_by = []
+            self.should_fail = should_fail
+
+        def filter(self, has_text=None):
+            self.filtered_by.append(has_text)
+            return self
+
+        def scroll_into_view_if_needed(self, timeout=None):
+            if self.should_fail:
+                raise RuntimeError(f"scroll failed for {self.name}")
+            self.scrolled = True
+
+        def click(self, timeout=None):
+            if self.should_fail:
+                raise RuntimeError(f"click failed for {self.name}")
+            self.clicked = True
+
+    class FakePollPage:
+        def __init__(self, locator_map):
+            self.locator_map = locator_map
+            self.requested_selectors = []
+
+        def locator(self, selector):
+            self.requested_selectors.append(selector)
+            return self.locator_map.setdefault(
+                selector, TestPollTargetOpening.FakePollButtonLocator(selector)
+            )
+
+    def test_build_poll_button_selector_prefers_message_test_id(self):
+        exporter = _make_exporter()
+        target = PollTarget(
+            selector='div:has-text("View votes")',
+            sourceText="Training\nView votes",
+            messageTestId="conv-msg-123",
+        )
+
+        assert exporter.buildPollButtonSelector(target) == (
+            '[data-testid="conv-msg-123"] [data-testid="poll-view-votes"]'
+        )
+
+    def test_open_poll_target_uses_stable_message_selector_when_available(self):
+        exporter = _make_exporter()
+        target = PollTarget(
+            selector='div:has-text("View votes")',
+            sourceText="Training\nView votes",
+            messageTestId="conv-msg-123",
+        )
+        stable_selector = exporter.buildPollButtonSelector(target)
+        stable_locator = self.FakePollButtonLocator(stable_selector)
+        page = self.FakePollPage({stable_selector: stable_locator})
+
+        exporter.openPollTarget(page, target)
+
+        assert page.requested_selectors[0] == stable_selector
+        assert stable_locator.scrolled is True
+        assert stable_locator.clicked is True
+
+    def test_open_poll_target_raises_last_error_when_all_candidates_fail(self):
+        exporter = _make_exporter()
+        target = PollTarget(
+            selector='div:has-text("View votes")',
+            sourceText="Training\nView votes",
+        )
+        generic_locator = self.FakePollButtonLocator(target.selector, should_fail=True)
+        page = self.FakePollPage({target.selector: generic_locator})
+
+        with pytest.raises(
+            RuntimeError, match="failed to interact with poll vote button"
+        ):
+            exporter.openPollTarget(page, target)
+
+
+# ---------------------------------------------------------------------------
+# findPollCards
+# ---------------------------------------------------------------------------
+
+
+class TestFindPollCards:
+    class StubLogger:
+        def __init__(self):
+            self.messages = []
+
+        def info(self, message, *args):
+            self.messages.append(message % args if args else message)
+
+    class StubPollItem:
+        def __init__(self, text: str):
+            self.text = text
+
+        def inner_text(self, timeout=None):
+            return self.text
+
+    class StubPollCollection:
+        def __init__(self, texts):
+            self.texts = list(texts)
+
+        def count(self):
+            return len(self.texts)
+
+        def nth(self, index):
+            return TestFindPollCards.StubPollItem(self.texts[index])
+
+    class StubPollPage:
+        def __init__(self, selector_map):
+            self.selector_map = selector_map
+
+        def locator(self, selector):
+            return self.selector_map[selector]
+
+    def test_logs_progress_for_large_poll_scan(self, monkeypatch):
+        exporter = _make_exporter()
+        exporter.logger = self.StubLogger()
+        # Keep keys text-based so this test focuses only on scan progress logging.
+        monkeypatch.setattr(exporter, "extractMessageTestId", lambda locator: "")
+
+        selector_map = {
+            '[data-testid="poll-view-votes"]': self.StubPollCollection([]),
+            'div[role="button"]:has-text("View votes")': self.StubPollCollection([]),
+            'div:has-text("View votes")': self.StubPollCollection(
+                [f"Training {index}" for index in range(60)]
+            ),
+        }
+        page = self.StubPollPage(selector_map)
+
+        result = exporter.findPollCards(page)
+
+        assert len(result) == 60
+        assert any(
+            "scanning 60 poll candidate(s) for selector 'div:has-text(\"View votes\")'"
+            in message
+            for message in exporter.logger.messages
+        )
+        assert any(
+            "processed 25/60 poll candidate(s) for selector 'div:has-text(\"View votes\")'"
+            in message
+            for message in exporter.logger.messages
+        )
+        assert any(
+            "processed 50/60 poll candidate(s) for selector 'div:has-text(\"View votes\")'"
+            in message
+            for message in exporter.logger.messages
+        )
+        assert any(
+            "poll discovery complete: 60 unique poll target(s)" in message
+            for message in exporter.logger.messages
+        )
+
+
+# ---------------------------------------------------------------------------
+# waitForDialog / closeDialog
+# ---------------------------------------------------------------------------
+
+
+class FakeDialogLocator:
+    def __init__(self, visible: bool):
+        self.visible = visible
+        self.last = self
+        self.timeouts = []
+
+    def is_visible(self, timeout=None):
+        self.timeouts.append(timeout)
+        return self.visible
+
+
+class FakeControlLocator:
+    def __init__(self, visible: bool):
+        self.visible = visible
+        self.first = self
+        self.clicked = False
+        self.timeouts = []
+
+    def is_visible(self, timeout=None):
+        self.timeouts.append(timeout)
+        return self.visible
+
+    def click(self, timeout=None):
+        self.clicked = True
+
+
+class FakePage:
+    def __init__(self, locator_map):
+        self.locator_map = locator_map
+        self.waits = []
+        self.escape_presses = []
+        self.keyboard = self
+
+    def locator(self, selector):
+        return self.locator_map[selector]
+
+    def wait_for_timeout(self, timeout):
+        self.waits.append(timeout)
+
+    def press(self, key):
+        self.escape_presses.append(key)
+
+
+class TestDialogHandling:
+    def test_wait_for_dialog_returns_visible_fallback_selector(self):
+        selectors = _make_exporter().selectors
+        visible_selector = '[data-testid="drawer"]'
+        locator_map = {
+            selector: FakeDialogLocator(selector == visible_selector)
+            for selector in selectors.iterDialogSelectors()
+        }
+        page = FakePage(locator_map)
+        exporter = _make_exporter(timeoutMs=10)
+
+        dialog = exporter.waitForDialog(page)
+
+        assert dialog is locator_map[visible_selector]
+        assert locator_map[visible_selector].timeouts
+        assert all(
+            timeout is not None and 0 < timeout <= 1000
+            for timeout in locator_map[visible_selector].timeouts
+        )
+
+    def test_close_dialog_uses_back_button_when_close_unavailable(self):
+        exporter = _make_exporter()
+        locator_map = {
+            'button[aria-label="Close"]': FakeControlLocator(False),
+            '[role="button"][aria-label="Close"]': FakeControlLocator(False),
+            'button[aria-label="Back"]': FakeControlLocator(True),
+            '[role="button"][aria-label="Back"]': FakeControlLocator(False),
+        }
+        page = FakePage(locator_map)
+
+        exporter.closeDialog(page, dialog=None)
+
+        assert locator_map['button[aria-label="Back"]'].clicked is True
+        assert page.escape_presses == []

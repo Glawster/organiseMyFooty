@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """CLI entry point for the GUI Naming Linter."""
 
 import argparse

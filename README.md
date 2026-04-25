@@ -22,6 +22,27 @@ pip install -r requirements.txt
 playwright install chromium
 ```
 
+This project expects `organiseMyProjects.logUtils` to be available in the same
+Python environment for centralized logging.
+
+## First-run login
+
+On the very first run the browser profile is empty, so WhatsApp Web will show
+a QR-code login screen inside the Playwright-controlled browser window.
+
+1. Run without `--headless` (the default) so the browser window is visible.
+2. Open WhatsApp on your phone → **Linked devices** → **Link a device**.
+3. Scan the QR code shown in the browser window.
+4. Wait for your chats to load, then the tool will continue automatically.
+
+The session is persisted in `--user-data-dir`, so you only need to do this
+once. If the default 120-second window is not enough to scan the code, pass
+a longer timeout:
+
+```bash
+python main.py --group "My Footy Group" --month 2026-03 --timeout-ms 300000
+```
+
 ## Usage
 
 Run from the `src/` directory (or add `src/` to `PYTHONPATH`):
@@ -35,11 +56,18 @@ python exportAttendance.py \
   --user-data-dir ~/.local/share/organiseMyFooty/profile
 ```
 
-For a safe first run (inspect without writing files):
+For a safe first run (inspect without writing files — default behaviour):
 
 ```bash
 cd src
-python exportAttendance.py --group "My Footy Group" --month 2026-03 --dry-run
+python exportAttendance.py --group "My Footy Group" --month 2026-03
+```
+
+To actually write the CSV exports, add `--confirm`:
+
+```bash
+cd src
+python exportAttendance.py --group "My Footy Group" --month 2026-03 --confirm
 ```
 
 ## CLI options
@@ -56,7 +84,7 @@ python exportAttendance.py --group "My Footy Group" --month 2026-03 --dry-run
 | `--include-no-votes` | Also collect "No" voters |
 | `--poll-title-filter` | Only process polls whose text contains this substring |
 | `--headless` | Run browser without showing a window |
-| `--dry-run` | Inspect and log without writing CSV exports |
+| `--confirm` | Write CSV exports; omit to run in safe dry-run mode (default) |
 
 ## Output files
 
@@ -76,7 +104,7 @@ black src/ tests/
 
 ## Notes
 
-- Uses WhatsApp Web browser automation; CSS selectors in `selectors.py` may need
+- Uses WhatsApp Web browser automation; CSS selectors in `whatsappSelectors.py` may need
   updating if WhatsApp changes its UI.
 - Reuses a persistent browser profile so you only need to log in once.
-- `--dry-run` runs the browser and inspects polls but writes no output files.
+- Without `--confirm`, the tool runs in dry-run mode and writes no output files.

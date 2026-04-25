@@ -62,17 +62,18 @@ browser and WhatsApp login. Restrict unit tests to pure-Python helpers.
 selectors there first when WhatsApp changes its UI — never scatter selector
 strings across other modules.
 
-### Dry-run flag
+### Confirm / dry-run flag
 
-The CLI exposes `--dry-run` (not `--confirm`) because it aligns with the
-WhatsApp export context where "inspect without writing" is the expected safe
-default phrasing. The `dryRun` boolean is passed through `RuntimeConfig`.
+The CLI uses `--confirm` (safe-by-default pattern). When `--confirm` is **not** passed the
+tool runs in dry-run mode — it opens the browser and inspects polls but writes no files.
+Pass `--confirm` to execute the export. The `dryRun` boolean (`not args.confirm`) is stored
+in `RuntimeConfig` and threaded through to `AttendanceExporter`.
 
 ### Logging
 
-The module falls back to `stdlib logging` when `organiseMyProjects.logUtils` is
-not installed. New code should follow the same `try / except` pattern used in
-`whatsappAttendance.py` so the tool works stand-alone.
+Use `organiseMyProjects.logUtils` directly for centralized logging. Do not add
+new stdlib logging fallbacks in this repository; tests should stub the
+dependency when needed.
 
 ### Output files
 
