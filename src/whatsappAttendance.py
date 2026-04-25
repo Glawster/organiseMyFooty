@@ -1,27 +1,33 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
-from datetime import datetime
+from collections import OrderedDict, defaultdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional, Iterable
+from typing import Iterable, Optional
 import csv
 import json
 import re
 import time
 
-# Private alias for logUtils.getLogger; kept at module scope so tests can stub it.
-from organiseMyProjects.logUtils import getLogger as _logUtilsGetLogger  # type: ignore[import-not-found]
-
 from attendanceConfig import RuntimeConfig, writeCsv
 from whatsappSelectors import DEFAULT_SELECTORS, WhatsAppSelectors
 
-DIALOG_POLL_INTERVAL_MS = 250  # Poll frequently without busy-waiting the browser page.
-POLL_PROGRESS_INTERVAL = 25
+try:
+    from organiseMyProjects.logUtils import getLogger  # type: ignore
+except Exception:  # pragma: no cover
+    import logging
 
-
-def getLogger(name: str, dryRun: bool = False):  # type: ignore
-    """Return the project logger with console output enabled."""
-    return _logUtilsGetLogger(name, includeConsole=True, dryRun=dryRun)
+    def getLogger(name: str):  # type: ignore
+        logger = logging.getLogger(name)
+        if not logger.handlers:
+            logger.setLevel(logging.INFO)
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                "%(asctime)s %(levelname)s %(name)s: %(message)s"
+            )
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+        return logger
 
 
 @dataclass(frozen=True)
@@ -34,47 +40,64 @@ class PollRecord:
 
 
 @dataclass(frozen=True)
-class PollTarget:
-    """Stable poll target data used to refind a vote button after the UI changes."""
+class PollSession:
+    pollKey: str
+    pollTitle: str
+    weekNumber: int
+    sessionName: str
 
-    selector: str
-    sourceText: str
-    messageTestId: str = ""
+
+class DryRunMixin:
+    @property
+    def prefix(self) -> str:
+        return "...[] " if self.config.dryRun else "..."
 
 
-class AttendanceExporter:
+class AttendanceExporter(DryRunMixin):
     def __init__(
         self, config: RuntimeConfig, selectors: WhatsAppSelectors | None = None
     ):
         self.config = config
         self.selectors = selectors or DEFAULT_SELECTORS
-        self.logger = getLogger(
-            "organiseMyWhatsApp.exportAttendance", dryRun=self.config.dryRun
-        )
+        self.logger = getLogger("organiseMyFooty.exportAttendance")
 
     def run(self) -> None:
-        self.logger.info("starting export for group: %s", self.config.groupName)
-        self.logger.info("month window: %s", self.config.monthWindow.monthKey)
-        self.logger.info("output dir: %s", self.config.outputDir)
+        self.logger.info(
+            "%sstarting export for group: %s", self.prefix, self.config.groupName
+        )
+        self.logger.info(
+            "%smonth window: %s", self.prefix, self.config.monthWindow.monthKey
+        )
+        self.logger.info("%soutput dir: %s", self.prefix, self.config.outputDir)
 
         if self.config.dryRun:
             self.logger.info(
-                "dry run enabled; browser automation will still inspect the UI but will not overwrite exports",
+                "%sdry run enabled; browser automation will inspect the UI but will not overwrite exports",
+                self.prefix,
             )
 
         records = self.collectPollAttendance()
-        self.logger.info("poll vote rows collected: %s", len(records))
+        self.logger.info("%spoll vote rows collected: %s", self.prefix, len(records))
 
         rawRows = [asdict(record) for record in records]
         summaryRows = self.buildSummaryRows(records)
+        reportRows = self.buildAttendanceReportRows(records)
 
         if self.config.dryRun:
-            self.logger.info("would write polls.csv rows: %s", len(rawRows))
             self.logger.info(
-                "would write attendanceSummary.csv rows: %s",
+                "%swould write polls.csv rows: %s", self.prefix, len(rawRows)
+            )
+            self.logger.info(
+                "%swould write attendanceSummary.csv rows: %s",
+                self.prefix,
                 len(summaryRows),
             )
-            self.writePreviewJson(rawRows, summaryRows)
+            self.logger.info(
+                "%swould write attendanceReport.csv rows: %s",
+                self.prefix,
+                max(0, len(reportRows) - 2),
+            )
+            self.writePreviewJson(rawRows, summaryRows, reportRows)
             return
 
         writeCsv(
@@ -87,24 +110,40 @@ class AttendanceExporter:
             summaryRows,
             ["name", "yesCount", "noCount", "totalVotes", "pollsResponded"],
         )
-        self.writePreviewJson(rawRows, summaryRows)
-        self.logger.info("export complete")
+        self.writeAttendanceReportCsv(
+            self.config.outputDir / "attendanceReport.csv",
+            reportRows,
+        )
+        self.writePreviewJson(rawRows, summaryRows, reportRows)
+        self.logger.info("%sexport complete", self.prefix)
 
-    def writePreviewJson(self, rawRows: list[dict], summaryRows: list[dict]) -> None:
+    def writePreviewJson(
+        self,
+        rawRows: list[dict],
+        summaryRows: list[dict],
+        reportRows: list[list[str]],
+    ) -> None:
         previewPath = self.config.outputDir / "exportPreview.json"
         payload = {
             "groupName": self.config.groupName,
             "month": self.config.monthWindow.monthKey,
             "rawPollRows": rawRows,
             "summaryRows": summaryRows,
+            "attendanceReportRows": reportRows,
         }
         if self.config.dryRun:
-            self.logger.info("would write preview json: %s", previewPath)
+            self.logger.info("%swould write preview json: %s", self.prefix, previewPath)
             return
 
         previewPath.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
         )
+
+    def writeAttendanceReportCsv(self, path: Path, rows: list[list[str]]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerows(rows)
 
     def buildSummaryRows(self, records: list[PollRecord]) -> list[dict]:
         summary: dict[str, dict[str, int | set[str]]] = {}
@@ -126,7 +165,7 @@ class AttendanceExporter:
             row["pollsResponded"].add(f"{record.pollTitle}|{record.pollDateText}")  # type: ignore[union-attr]
 
         outputRows: list[dict] = []
-        for voterName in sorted(summary):
+        for voterName in sorted(summary, key=str.casefold):
             row = summary[voterName]
             outputRows.append(
                 {
@@ -139,26 +178,100 @@ class AttendanceExporter:
             )
         return outputRows
 
-    def collectPollAttendance(self) -> list[PollRecord]:
-        try:
-            from playwright.sync_api import (
-                sync_playwright,
-                TimeoutError as PlaywrightTimeoutError,
+    def buildAttendanceReportRows(self, records: list[PollRecord]) -> list[list[str]]:
+        """Build a two-row-header report with dynamic sessions.
+
+        Sessions are discovered from scraped poll titles. Week numbers are inferred
+        per repeated session name: the first poll for a session is week 1, the
+        second poll for that same session is week 2, and so on.
+        """
+        if not records:
+            return [[""], ["name"]]
+
+        pollSessions = self.buildPollSessions(records)
+        sessionNames = self.extractOrderedSessionNames(pollSessions)
+        maxWeek = max(session.weekNumber for session in pollSessions.values())
+
+        weekHeader = [""]
+        sessionHeader = ["name"]
+        for weekNumber in range(1, maxWeek + 1):
+            for sessionIndex, sessionName in enumerate(sessionNames):
+                weekHeader.append(f"week {weekNumber}" if sessionIndex == 0 else "")
+                sessionHeader.append(sessionName)
+
+        voterNames = sorted({record.voterName for record in records}, key=str.casefold)
+        attendance = self.buildAttendanceLookup(records, pollSessions)
+
+        rows = [weekHeader, sessionHeader]
+        for voterName in voterNames:
+            row = [voterName]
+            for weekNumber in range(1, maxWeek + 1):
+                for sessionName in sessionNames:
+                    row.append(attendance.get((voterName, weekNumber, sessionName), ""))
+            rows.append(row)
+
+        return rows
+
+    def buildPollSessions(
+        self, records: list[PollRecord]
+    ) -> OrderedDict[str, PollSession]:
+        pollKeys: OrderedDict[str, str] = OrderedDict()
+        for record in records:
+            pollKeys.setdefault(self.buildPollKey(record), record.pollTitle)
+
+        sessionCounts: defaultdict[str, int] = defaultdict(int)
+        pollSessions: OrderedDict[str, PollSession] = OrderedDict()
+
+        for pollKey, pollTitle in pollKeys.items():
+            sessionName = self.extractSessionName(pollTitle)
+            sessionCounts[sessionName] += 1
+            pollSessions[pollKey] = PollSession(
+                pollKey=pollKey,
+                pollTitle=pollTitle,
+                weekNumber=sessionCounts[sessionName],
+                sessionName=sessionName,
             )
-        except ModuleNotFoundError as exc:
-            raise ModuleNotFoundError(
-                "playwright is not installed; run: pip install playwright && playwright install chromium"
-            ) from exc
+
+        return pollSessions
+
+    def extractOrderedSessionNames(
+        self, pollSessions: OrderedDict[str, PollSession]
+    ) -> list[str]:
+        sessions: OrderedDict[str, None] = OrderedDict()
+        for pollSession in pollSessions.values():
+            sessions.setdefault(pollSession.sessionName, None)
+        return list(sessions.keys())
+
+    def buildAttendanceLookup(
+        self,
+        records: list[PollRecord],
+        pollSessions: OrderedDict[str, PollSession],
+    ) -> dict[tuple[str, int, str], str]:
+        attendance: dict[tuple[str, int, str], str] = {}
+        for record in records:
+            pollSession = pollSessions[self.buildPollKey(record)]
+            key = (record.voterName, pollSession.weekNumber, pollSession.sessionName)
+            current = attendance.get(key, "")
+
+            if record.option.lower() == "yes":
+                attendance[key] = "yes"
+            elif record.option.lower() == "no" and current != "yes":
+                attendance[key] = "no"
+
+        return attendance
+
+    def buildPollKey(self, record: PollRecord) -> str:
+        return f"{record.pollTitle}|{record.pollDateText}|{record.sourceHint[:80]}"
+
+    def extractSessionName(self, pollTitle: str) -> str:
+        title = " ".join(pollTitle.split()).strip()
+        return re.sub(r"\s+", " ", title) or "unknown session"
+
+    def collectPollAttendance(self) -> list[PollRecord]:
+        from playwright.sync_api import sync_playwright
 
         records: list[PollRecord] = []
         pollCount = 0
-
-        self.logger.info(
-            "launching browser (user_data_dir=%s, headless=%s, channel=%s)",
-            self.config.userDataDir,
-            self.config.headless,
-            self.config.browserChannel or "default",
-        )
 
         with sync_playwright() as playwright:
             browserContext = playwright.chromium.launch_persistent_context(
@@ -169,28 +282,35 @@ class AttendanceExporter:
             )
             try:
                 page = browserContext.new_page()
-                self.logger.info("navigating to %s", self.selectors.webUrl)
                 page.goto(self.selectors.webUrl)
-                self.logger.info("page loaded: %s", page.url)
                 self.waitForWhatsAppReady(page)
                 self.openGroup(page, self.config.groupName)
                 self.scrollChatHistory(page)
 
                 pollLocators = self.findPollCards(page)
-                self.logger.info("candidate poll cards found: %s", len(pollLocators))
+                self.logger.info(
+                    "%scandidate poll cards found: %s", self.prefix, len(pollLocators)
+                )
 
-                for index, pollTarget in enumerate(pollLocators, start=1):
+                for index, locator in enumerate(pollLocators, start=1):
                     if (
                         self.config.limitPolls is not None
                         and pollCount >= self.config.limitPolls
                     ):
                         self.logger.info(
-                            "poll limit reached: %s",
+                            "%spoll limit reached: %s",
+                            self.prefix,
                             self.config.limitPolls,
                         )
                         break
 
-                    sourceText = pollTarget.sourceText
+                    try:
+                        locator.scroll_into_view_if_needed(
+                            timeout=self.config.timeoutMs
+                        )
+                        sourceText = locator.inner_text(timeout=self.config.timeoutMs)
+                    except Exception:
+                        sourceText = ""
 
                     if (
                         self.config.pollTitleFilter
@@ -198,27 +318,29 @@ class AttendanceExporter:
                         not in sourceText.lower()
                     ):
                         self.logger.info(
-                            "skipping poll due to title filter: %s",
+                            "%sskipping poll due to title filter: %s",
+                            self.prefix,
                             self.config.pollTitleFilter,
                         )
                         continue
 
-                    self.logger.info("opening poll %s", index)
+                    self.logger.info("%sopening poll %s", self.prefix, index)
                     try:
-                        self.openPollTarget(page, pollTarget)
-                    except Exception as exc:
-                        self.logger.warning("Unable to open poll votes dialog: %s", exc)
-                        continue
+                        locator.click(timeout=self.config.timeoutMs)
+                    except Exception:
+                        try:
+                            locator.get_by_text(
+                                self.selectors.viewVotesText, exact=False
+                            ).click(timeout=self.config.timeoutMs)
+                        except Exception as exc:
+                            self.logger.warning(
+                                "Unable to open poll votes dialog: %s", exc
+                            )
+                            continue
 
-                    try:
-                        dialog = self.waitForDialog(page)
-                    except TimeoutError:
-                        self.logger.warning(
-                            "unable to locate votes dialog for poll %s; skipping",
-                            index,
-                        )
-                        self.closeDialog(page, dialog=None)
-                        continue
+                    dialog = self.waitForDialog(page)
+                    self.expandAllVoters(dialog)
+
                     pollTitle = (
                         self.extractPollTitle(dialog, sourceText=sourceText)
                         or "unknown poll"
@@ -239,7 +361,6 @@ class AttendanceExporter:
                             )
                         )
 
-                    noVoters: list[str] = []
                     if self.config.includeNoVotes:
                         noVoters = self.extractOptionVoters(
                             dialog, optionTexts=self.selectors.noOptionTexts
@@ -255,14 +376,6 @@ class AttendanceExporter:
                                 )
                             )
 
-                    self.logger.info(
-                        "poll %s: title=%r, yes=%s voter(s), no=%s voter(s)",
-                        index,
-                        pollTitle,
-                        len(yesVoters),
-                        len(noVoters),
-                    )
-
                     pollCount += 1
                     self.closeDialog(page, dialog)
 
@@ -273,42 +386,28 @@ class AttendanceExporter:
 
     def waitForWhatsAppReady(self, page) -> None:
         page.wait_for_load_state("domcontentloaded")
-        self.logger.info("waiting for WhatsApp Web to be ready...")
-        self.logger.info(
-            "(first run: if a QR code appears in the browser window, open WhatsApp on "
-            "your phone → Linked devices → Link a device and scan it; use --timeout-ms "
-            "to allow more time, e.g. --timeout-ms 300000)",
-        )
-        deadline = time.time() + max(120, self.config.timeoutMs / 1000)
-        startTime = time.time()
-        lastProgressLog = 0.0
+        self.logger.info("%swaiting for WhatsApp Web to be ready...", self.prefix)
+        deadline = time.time() + max(60, self.config.timeoutMs / 1000)
 
         while time.time() < deadline:
-            elapsed = int(time.time() - startTime)
-            if elapsed - lastProgressLog >= 10:
-                self.logger.info(
-                    "still waiting for whatsapp web (%ss elapsed)...",
-                    elapsed,
-                )
-                lastProgressLog = elapsed
-            for selector in self.selectors.iterReadySelectors():
+            for selector in self.selectors.iterSearchSelectors():
                 try:
                     locator = page.locator(selector).first
                     if locator.is_visible(timeout=1000):
-                        self.logger.info("whatsapp ready via selector: %s", selector)
+                        self.logger.info(
+                            "%swhatsapp ready via selector: %s", self.prefix, selector
+                        )
                         return
                 except Exception:
                     continue
             time.sleep(1)
 
         raise TimeoutError(
-            "whatsapp web did not become ready; if this is your first run, scan the QR "
-            "code that appears in the browser window using your phone's WhatsApp app. "
-            "Use --timeout-ms to allow more time (e.g. --timeout-ms 300000)."
+            "whatsapp web did not become ready; make sure you are logged in"
         )
 
     def openGroup(self, page, groupName: str) -> None:
-        self.logger.info("opening group: %s", groupName)
+        self.logger.info("%sopening group: %s", self.prefix, groupName)
 
         lastError: Optional[Exception] = None
         for selector in self.selectors.iterSearchSelectors():
@@ -317,10 +416,6 @@ class AttendanceExporter:
                 searchBox.click(timeout=self.config.timeoutMs)
                 searchBox.fill("")
                 searchBox.type(groupName, delay=40)
-                self.logger.info(
-                    "search box ready (selector: %s), typed group name",
-                    selector,
-                )
                 break
             except Exception as exc:
                 lastError = exc
@@ -330,18 +425,15 @@ class AttendanceExporter:
 
         candidate = page.get_by_text(groupName, exact=True).first
         candidate.click(timeout=self.config.timeoutMs)
-        self.logger.info("group chat opened")
 
     def scrollChatHistory(self, page, scrollPasses: int = 12) -> None:
-        self.logger.info("scrolling chat history to load older polls...")
-        for i in range(scrollPasses):
+        self.logger.info("%sscrolling chat history to load older polls...", self.prefix)
+        for _ in range(scrollPasses):
             page.mouse.wheel(0, -2000)
             page.wait_for_timeout(500)
-            if (i + 1) % 4 == 0 or i + 1 == scrollPasses:
-                self.logger.info("scroll pass %s/%s", i + 1, scrollPasses)
 
-    def findPollCards(self, page) -> list[PollTarget]:
-        pollLocators: list[PollTarget] = []
+    def findPollCards(self, page) -> list:
+        pollLocators: list = []
         seenKeys: set[str] = set()
 
         for selector in self.selectors.iterPollSelectors():
@@ -351,146 +443,62 @@ class AttendanceExporter:
             except Exception:
                 continue
 
-            self.logger.info("poll selector '%s' matched %s item(s)", selector, count)
-            if count:
-                self.logger.info(
-                    "scanning %s poll candidate(s) for selector '%s'",
-                    count,
-                    selector,
-                )
-
             for index in range(count):
                 item = locator.nth(index)
                 try:
                     text = item.inner_text(timeout=1000)
                 except Exception:
                     text = f"item-{index}"
-                messageTestId = self.extractMessageTestId(item)
-                key = f"{messageTestId or selector}|{text[:120]}"
+                key = f"{selector}|{text[:120]}"
                 if key in seenKeys:
                     continue
                 seenKeys.add(key)
-                pollLocators.append(
-                    PollTarget(
-                        selector=selector,
-                        sourceText=text,
-                        messageTestId=messageTestId or "",
-                    )
-                )
-                processed = index + 1
-                if count >= POLL_PROGRESS_INTERVAL and (
-                    processed % POLL_PROGRESS_INTERVAL == 0
-                ):
-                    self.logger.info(
-                        "processed %s/%s poll candidate(s) for selector '%s'",
-                        processed,
-                        count,
-                        selector,
-                    )
+                pollLocators.append(item)
 
-        self.logger.info(
-            "poll discovery complete: %s unique poll target(s)",
-            len(pollLocators),
-        )
         return pollLocators
 
-    def extractMessageTestId(self, locator) -> str:
-        """Return the nearest WhatsApp conversation message test id for a poll element."""
-        try:
-            container = locator.locator(
-                'xpath=ancestor-or-self::*[starts-with(@data-testid, "conv-msg-")][1]'
-            ).first
-            return container.get_attribute("data-testid") or ""
-        except Exception as exc:
-            self.logger.debug(
-                "unable to extract poll message test id: %s",
-                exc,
-            )
-            return ""
-
-    def extractPollSummaryText(self, sourceText: str) -> str:
-        """Return the first non-empty source line as a stable text hint for a poll."""
-        for line in sourceText.splitlines():
-            value = line.strip()
-            if value:
-                return value
-        return ""
-
-    def buildPollButtonSelector(self, pollTarget: PollTarget) -> str:
-        """Build the most stable available selector for the target poll vote button."""
-        if pollTarget.messageTestId:
-            return (
-                f'[data-testid="{pollTarget.messageTestId}"] '
-                '[data-testid="poll-view-votes"]'
-            )
-        return pollTarget.selector
-
-    def openPollTarget(self, page, pollTarget: PollTarget) -> None:
-        """Open a poll using stable test ids first, then text-filtered and generic fallbacks."""
-        candidateLocators = [
-            page.locator(self.buildPollButtonSelector(pollTarget)).first
-        ]
-        summaryText = self.extractPollSummaryText(pollTarget.sourceText)
-        if summaryText:
-            candidateLocators.append(
-                page.locator(pollTarget.selector).filter(has_text=summaryText).first
-            )
-        if pollTarget.selector != self.buildPollButtonSelector(pollTarget):
-            candidateLocators.append(page.locator(pollTarget.selector).first)
-
-        lastError: Exception = RuntimeError("failed to interact with poll vote button")
-        for locator in candidateLocators:
-            try:
-                locator.scroll_into_view_if_needed(timeout=self.config.timeoutMs)
-                locator.click(timeout=self.config.timeoutMs)
-                return
-            except Exception as exc:
-                lastError = exc
-
-        raise RuntimeError(
-            "failed to interact with poll vote button "
-            f"after {len(candidateLocators)} attempt(s) for {summaryText!r}"
-        ) from lastError
-
     def waitForDialog(self, page):
-        timeoutMs = max(self.config.timeoutMs, DIALOG_POLL_INTERVAL_MS)
-        deadline = time.time() + (timeoutMs / 1000)
-        selectors = tuple(self.selectors.iterDialogSelectors())
+        for selector in self.selectors.iterDialogSelectors():
+            try:
+                dialog = page.locator(selector).last
+                dialog.wait_for(state="visible", timeout=self.config.timeoutMs)
+                return dialog
+            except Exception:
+                continue
+        raise TimeoutError("unable to locate votes dialog")
 
-        while time.time() < deadline:
-            remainingMs = int((deadline - time.time()) * 1000)
-            if remainingMs <= 0:
+    def expandAllVoters(self, dialog) -> None:
+        """Expand all lazy-loaded voter rows inside the current poll dialog."""
+        for _ in range(10):
+            clicked = False
+            try:
+                buttons = dialog.get_by_text(re.compile(r"^See all", re.IGNORECASE))
+                count = buttons.count()
+            except Exception:
                 break
-            # Keep the overall deadline separate from the per-selector probe timeout so
-            # we can retry multiple selector candidates within the remaining time budget.
-            probeTimeoutMs = min(1000, remainingMs)
-            for selector in selectors:
+
+            for index in range(count):
                 try:
-                    dialog = page.locator(selector).last
-                    if dialog.is_visible(timeout=probeTimeoutMs):
-                        self.logger.info(
-                            "votes dialog opened via selector: %s",
-                            selector,
-                        )
-                        return dialog
+                    button = buttons.nth(index)
+                    if button.is_visible(timeout=500):
+                        button.click(timeout=self.config.timeoutMs)
+                        dialog.page.wait_for_timeout(300)
+                        clicked = True
                 except Exception:
                     continue
 
-            page.wait_for_timeout(DIALOG_POLL_INTERVAL_MS)
-
-        raise TimeoutError("unable to locate votes dialog")
+            if not clicked:
+                break
 
     def extractPollTitle(self, dialog, sourceText: str = "") -> str:
-        try:
-            headings = dialog.locator("h1, h2, h3, [role='heading']")
-            if headings.count() > 0:
-                title = headings.first.inner_text(timeout=1000).strip()
-                if title:
-                    return title
-        except Exception:
-            pass
-
         lines = [line.strip() for line in sourceText.splitlines() if line.strip()]
+
+        # Typical poll card text:
+        # 0 = sender
+        # 1 = poll title/session
+        # 2 = Select one or more
+        if len(lines) >= 2:
+            return lines[1]
         if lines:
             return lines[0]
         return "unknown poll"
@@ -503,9 +511,9 @@ class AttendanceExporter:
         """
         Heuristic extractor.
 
-        The exact DOM for poll results may change.
-        This implementation looks for a visible section with the option label,
-        then collects person-like rows beneath it until the next option heading.
+        The exact DOM for poll results may change. This implementation looks for
+        a visible section with the option label, then collects person-like rows
+        beneath it until the next option heading.
         """
         optionNames = tuple(optionTexts)
         dialogText = dialog.inner_text(timeout=self.config.timeoutMs)
@@ -534,17 +542,17 @@ class AttendanceExporter:
         return self.cleanVoterNames(captured)
 
     def looksLikeVoteCount(self, line: str) -> bool:
-        compact = line.replace(" ", "")
-        return compact.isdigit() or bool(re.fullmatch(r"\d+votes?", line.lower()))
+        lowered = line.lower().strip()
+        compact = lowered.replace(" ", "")
+        return compact.isdigit() or bool(re.fullmatch(r"\d+votes?", lowered))
 
     def looksLikeSystemText(self, line: str) -> bool:
-        lowered = line.lower()
+        lowered = line.lower().strip()
         systemFragments = (
             "select one or more",
             "view votes",
-            "votes",
+            "poll details",
             "message",
-            "poll",
         )
         return any(fragment in lowered for fragment in systemFragments)
 
@@ -560,8 +568,14 @@ class AttendanceExporter:
                 continue
             if re.search(r"\b\d{1,2}:\d{2}\b", value):
                 continue
-            if value.lower() in {"yes", "no"}:
+            if value.lower() in {"yes", "no", "you"}:
                 continue
+            if value.lower().startswith("see all"):
+                continue
+            if value.lower().endswith("vote") or value.lower().endswith("votes"):
+                continue
+            if value.startswith("~ "):
+                value = value[2:].strip()
             if value in seen:
                 continue
             seen.add(value)
@@ -570,22 +584,18 @@ class AttendanceExporter:
         return cleaned
 
     def closeDialog(self, page, dialog) -> None:
-        for selector in (
-            self.selectors.closeDialogCandidates + self.selectors.backCandidates
-        ):
+        for selector in self.selectors.closeDialogCandidates:
             try:
                 control = page.locator(selector).first
                 if control.is_visible(timeout=1000):
                     control.click(timeout=self.config.timeoutMs)
                     page.wait_for_timeout(400)
-                    self.logger.info("closed dialog via selector: %s", selector)
                     return
             except Exception:
                 continue
 
         page.keyboard.press("Escape")
         page.wait_for_timeout(400)
-        self.logger.info("closed dialog via Escape key")
 
     def deduplicateRecords(self, records: list[PollRecord]) -> list[PollRecord]:
         output: list[PollRecord] = []
@@ -601,5 +611,4 @@ class AttendanceExporter:
                 continue
             seen.add(key)
             output.append(record)
-        self.logger.info("deduplication: %s → %s records", len(records), len(output))
         return output
