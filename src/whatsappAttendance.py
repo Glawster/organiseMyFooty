@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict, defaultdict
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 import csv
@@ -12,9 +13,12 @@ import time
 from attendanceConfig import RuntimeConfig, writeCsv
 from whatsappSelectors import DEFAULT_SELECTORS, WhatsAppSelectors
 
-from organiseMyProjects.logUtils import getLogger, thisApplication  # type: ignore
+from organiseMyProjects.logUtils import getLogger
 
-logger = getLogger(thisApplication, includeConsole=True)
+logger = getLogger()
+
+POLL_CACHE_VERSION = 1
+RECENT_POLLS_TO_RECHECK = 2
 
 
 @dataclass(frozen=True)
@@ -132,6 +136,105 @@ class AttendanceExporter(DryRunMixin):
             writer = csv.writer(handle)
             writer.writerows(rows)
 
+    def getPollCachePath(self) -> Path:
+        return self.config.outputDir / "pollCache.json"
+
+    def loadPollCache(self) -> OrderedDict[str, list[PollRecord]]:
+        cachePath = self.getPollCachePath()
+        if not cachePath.exists():
+            return OrderedDict()
+
+        try:
+            payload = json.loads(cachePath.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            self.logger.warning("Poll cache is not valid JSON and will be ignored: %s", cachePath)
+            return OrderedDict()
+
+        if payload.get("version") != POLL_CACHE_VERSION:
+            self.logger.info("%signoring old poll cache version: %s", self.prefix, cachePath)
+            return OrderedDict()
+
+        if payload.get("groupName") != self.config.groupName:
+            self.logger.info("%signoring poll cache for different group: %s", self.prefix, cachePath)
+            return OrderedDict()
+
+        if payload.get("month") != self.config.monthWindow.monthKey:
+            self.logger.info("%signoring poll cache for different month: %s", self.prefix, cachePath)
+            return OrderedDict()
+
+        cachedPolls: OrderedDict[str, list[PollRecord]] = OrderedDict()
+        rawPolls = payload.get("polls", {})
+        if not isinstance(rawPolls, dict):
+            return cachedPolls
+
+        for pollKey, rawRecords in rawPolls.items():
+            if not isinstance(rawRecords, list):
+                continue
+            records = self.recordsFromCacheRows(rawRecords)
+            if records:
+                cachedPolls[pollKey] = records
+
+        self.logger.info(
+            "%sloaded cached poll result(s): %s", self.prefix, len(cachedPolls)
+        )
+        return cachedPolls
+
+    def savePollCache(self, recordsByPollKey: OrderedDict[str, list[PollRecord]]) -> None:
+        cachePath = self.getPollCachePath()
+
+        if self.config.dryRun:
+            self.logger.info("%swould write poll cache: %s", self.prefix, cachePath)
+            return
+
+        cachePath.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "version": POLL_CACHE_VERSION,
+            "groupName": self.config.groupName,
+            "month": self.config.monthWindow.monthKey,
+            "savedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "recentPollsToRecheck": RECENT_POLLS_TO_RECHECK,
+            "polls": {
+                pollKey: [asdict(record) for record in records]
+                for pollKey, records in recordsByPollKey.items()
+            },
+        }
+        cachePath.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        self.logger.info(
+            "%spoll cache written: %s poll(s)", self.prefix, len(recordsByPollKey)
+        )
+
+    def recordsFromCacheRows(self, rows: list[dict]) -> list[PollRecord]:
+        records: list[PollRecord] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            try:
+                records.append(
+                    PollRecord(
+                        pollTitle=str(row["pollTitle"]),
+                        pollDateText=str(row["pollDateText"]),
+                        option=str(row["option"]),
+                        voterName=str(row["voterName"]),
+                        sourceHint=str(row["sourceHint"]),
+                    )
+                )
+            except KeyError:
+                continue
+        return self.deduplicateRecords(records)
+
+    def flattenCachedPolls(
+        self, recordsByPollKey: OrderedDict[str, list[PollRecord]]
+    ) -> list[PollRecord]:
+        records: list[PollRecord] = []
+        for pollRecords in recordsByPollKey.values():
+            records.extend(pollRecords)
+        return self.deduplicateRecords(records)
+
+    def shouldRecheckPoll(self, index: int, totalPolls: int) -> bool:
+        return index > max(0, totalPolls - RECENT_POLLS_TO_RECHECK)
+
     def buildSummaryRows(self, records: list[PollRecord]) -> list[dict]:
         summary: dict[str, dict[str, int | set[str]]] = {}
         for record in records:
@@ -248,7 +351,26 @@ class AttendanceExporter(DryRunMixin):
         return attendance
 
     def buildPollKey(self, record: PollRecord) -> str:
-        return f"{record.pollTitle}|{record.pollDateText}|{record.sourceHint[:80]}"
+        return self.buildPollKeyFromParts(
+            pollTitle=record.pollTitle,
+            pollDateText=record.pollDateText,
+            sourceHint=record.sourceHint,
+        )
+
+    def buildPollKeyFromParts(
+        self, pollTitle: str, pollDateText: str, sourceHint: str
+    ) -> str:
+        return f"{pollTitle}|{pollDateText}|{sourceHint[:80]}"
+
+    def buildPollKeyFromSourceText(self, sourceText: str) -> tuple[str, str, str]:
+        pollTitle = self.extractPollTitle(sourceText=sourceText) or "unknown poll"
+        pollDateText = self.extractLikelyDateText(sourceText) or ""
+        pollKey = self.buildPollKeyFromParts(
+            pollTitle=pollTitle,
+            pollDateText=pollDateText,
+            sourceHint=sourceText[:240],
+        )
+        return pollKey, pollTitle, pollDateText
 
     def extractSessionName(self, pollTitle: str) -> str:
         title = " ".join(pollTitle.split()).strip()
@@ -257,7 +379,7 @@ class AttendanceExporter(DryRunMixin):
     def collectPollAttendance(self) -> list[PollRecord]:
         from playwright.sync_api import sync_playwright
 
-        records: list[PollRecord] = []
+        recordsByPollKey = self.loadPollCache()
         pollCount = 0
 
         with sync_playwright() as playwright:
@@ -275,8 +397,9 @@ class AttendanceExporter(DryRunMixin):
                 self.scrollChatHistory(page)
 
                 pollLocators = self.findPollCards(page)
+                totalPolls = len(pollLocators)
                 self.logger.info(
-                    "%scandidate poll cards found: %s", self.prefix, len(pollLocators)
+                    "%scandidate poll cards found: %s", self.prefix, totalPolls
                 )
 
                 for index, locator in enumerate(pollLocators, start=1):
@@ -311,7 +434,40 @@ class AttendanceExporter(DryRunMixin):
                         )
                         continue
 
-                    self.logger.info("%sopening poll %s", self.prefix, index)
+                    pollKey, pollTitle, pollDateText = self.buildPollKeyFromSourceText(
+                        sourceText
+                    )
+                    shouldRecheck = self.shouldRecheckPoll(index, totalPolls)
+                    cachedRecords = recordsByPollKey.get(pollKey)
+
+                    if cachedRecords and not shouldRecheck:
+                        self.logger.info(
+                            "%susing cached poll %s/%s: %s",
+                            self.prefix,
+                            index,
+                            totalPolls,
+                            pollTitle,
+                        )
+                        pollCount += 1
+                        continue
+
+                    if cachedRecords and shouldRecheck:
+                        self.logger.info(
+                            "%srechecking recent poll %s/%s: %s",
+                            self.prefix,
+                            index,
+                            totalPolls,
+                            pollTitle,
+                        )
+                    else:
+                        self.logger.info(
+                            "%sopening poll %s/%s: %s",
+                            self.prefix,
+                            index,
+                            totalPolls,
+                            pollTitle,
+                        )
+
                     try:
                         locator.click(timeout=self.config.timeoutMs)
                     except Exception:
@@ -333,12 +489,18 @@ class AttendanceExporter(DryRunMixin):
                         or "unknown poll"
                     )
                     pollDateText = self.extractLikelyDateText(sourceText) or ""
+                    pollKey = self.buildPollKeyFromParts(
+                        pollTitle=pollTitle,
+                        pollDateText=pollDateText,
+                        sourceHint=sourceText[:240],
+                    )
+                    pollRecords: list[PollRecord] = []
 
                     yesVoters = self.extractOptionVoters(
                         dialog, optionTexts=self.selectors.yesOptionTexts
                     )
                     for voterName in yesVoters:
-                        records.append(
+                        pollRecords.append(
                             PollRecord(
                                 pollTitle=pollTitle,
                                 pollDateText=pollDateText,
@@ -353,7 +515,7 @@ class AttendanceExporter(DryRunMixin):
                             dialog, optionTexts=self.selectors.noOptionTexts
                         )
                         for voterName in noVoters:
-                            records.append(
+                            pollRecords.append(
                                 PollRecord(
                                     pollTitle=pollTitle,
                                     pollDateText=pollDateText,
@@ -363,13 +525,15 @@ class AttendanceExporter(DryRunMixin):
                                 )
                             )
 
+                    recordsByPollKey[pollKey] = self.deduplicateRecords(pollRecords)
                     pollCount += 1
                     self.closeDialog(page, dialog)
 
             finally:
                 browserContext.close()
 
-        return self.deduplicateRecords(records)
+        self.savePollCache(recordsByPollKey)
+        return self.flattenCachedPolls(recordsByPollKey)
 
     def waitForWhatsAppReady(self, page) -> None:
         page.wait_for_load_state("domcontentloaded")
@@ -477,7 +641,7 @@ class AttendanceExporter(DryRunMixin):
             if not clicked:
                 break
 
-    def extractPollTitle(self, dialog, sourceText: str = "") -> str:
+    def extractPollTitle(self, dialog=None, sourceText: str = "") -> str:
         lines = [line.strip() for line in sourceText.splitlines() if line.strip()]
 
         # Typical poll card text:
