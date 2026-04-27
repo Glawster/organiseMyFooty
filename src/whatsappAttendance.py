@@ -12,22 +12,9 @@ import time
 from attendanceConfig import RuntimeConfig, writeCsv
 from whatsappSelectors import DEFAULT_SELECTORS, WhatsAppSelectors
 
-try:
-    from organiseMyProjects.logUtils import getLogger  # type: ignore
-except Exception:  # pragma: no cover
-    import logging
+from organiseMyProjects.logUtils import getLogger, thisApplication  # type: ignore
 
-    def getLogger(name: str):  # type: ignore
-        logger = logging.getLogger(name)
-        if not logger.handlers:
-            logger.setLevel(logging.INFO)
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                "%(asctime)s %(levelname)s %(name)s: %(message)s"
-            )
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-        return logger
+logger = getLogger(thisApplication, includeConsole=True)
 
 
 @dataclass(frozen=True)
@@ -59,7 +46,7 @@ class AttendanceExporter(DryRunMixin):
     ):
         self.config = config
         self.selectors = selectors or DEFAULT_SELECTORS
-        self.logger = getLogger("organiseMyFooty.exportAttendance")
+        self.logger = logger
 
     def run(self) -> None:
         self.logger.info(
