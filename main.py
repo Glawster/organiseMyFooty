@@ -195,13 +195,13 @@ def buildConfig(args: argparse.Namespace, dryRun: bool) -> Config:
 def run(config: Config) -> None:
     logger = getLogger()
 
-    logger.info("...starting attendance export")
-    logger.info(f"...group: {config.runtime.groupName}")
-    logger.info(f"...dryRun: {config.runtime.dryRun}")
+    logger.doing("starting attendance export")
+    logger.value("group", config.runtime.groupName)
+    logger.value("dryRun", config.runtime.dryRun)
 
     AttendanceExporter(config.runtime).run()
 
-    logger.info("attendance export complete...")
+    logger.done("attendance export complete")
 
 
 # -------------------------------------------------------------------
@@ -220,7 +220,7 @@ def main() -> None:
     # REQUIRED logging pattern
     logger = getLogger(includeConsole=True, dryRun=dryRun)
 
-    logger.info("...starting application")
+    logger.doing("starting application")
 
     config = buildConfig(args, dryRun)
 
@@ -228,7 +228,7 @@ def main() -> None:
 
     saveState(groupName=args.groupName, month=normaliseMonthInput(args.month))
 
-    logger.info("application complete...")
+    logger.done("application complete")
 
 
 # -------------------------------------------------------------------

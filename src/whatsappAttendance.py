@@ -19,6 +19,7 @@ logger = getLogger()
 
 POLL_CACHE_VERSION = 1
 RECENT_POLLS_TO_RECHECK = 2
+IGNORE_POLL_CACHE = True  # temporary while stabilising poll discovery
 
 
 @dataclass(frozen=True)
@@ -38,13 +39,7 @@ class PollSession:
     sessionName: str
 
 
-class DryRunMixin:
-    @property
-    def prefix(self) -> str:
-        return "...[] " if self.config.dryRun else "..."
-
-
-class AttendanceExporter(DryRunMixin):
+class AttendanceExporter:
     def __init__(
         self, config: RuntimeConfig, selectors: WhatsAppSelectors | None = None
     ):
@@ -53,60 +48,44 @@ class AttendanceExporter(DryRunMixin):
         self.logger = logger
 
     def run(self) -> None:
-        self.logger.info(
-            "%sstarting export for group: %s", self.prefix, self.config.groupName
-        )
-        self.logger.info(
-            "%smonth window: %s", self.prefix, self.config.monthWindow.monthKey
-        )
-        self.logger.info("%soutput dir: %s", self.prefix, self.config.outputDir)
-
-        if self.config.dryRun:
-            self.logger.info(
-                "%sdry run enabled; browser automation will inspect the UI but will not overwrite exports",
-                self.prefix,
-            )
+        self.logger.doing("starting export for group")
+        self.logger.value("month window", self.config.monthWindow.monthKey)
+        self.logger.value("output dir", self.config.outputDir)
 
         records = self.collectPollAttendance()
-        self.logger.info("%spoll vote rows collected: %s", self.prefix, len(records))
+        self.logger.value("poll vote rows collected", len(records))
 
         rawRows = [asdict(record) for record in records]
         summaryRows = self.buildSummaryRows(records)
         reportRows = self.buildAttendanceReportRows(records)
 
-        if self.config.dryRun:
-            self.logger.info(
-                "%swould write polls.csv rows: %s", self.prefix, len(rawRows)
+        self.logger.action("write polls.csv rows: %s", len(rawRows))
+        if not self.config.dryRun:
+            writeCsv(
+                self.config.outputDir / "polls.csv",
+                rawRows,
+                ["pollTitle", "pollDateText", "option", "voterName", "sourceHint"],
             )
-            self.logger.info(
-                "%swould write attendanceSummary.csv rows: %s",
-                self.prefix,
-                len(summaryRows),
-            )
-            self.logger.info(
-                "%swould write attendanceReport.csv rows: %s",
-                self.prefix,
-                max(0, len(reportRows) - 2),
-            )
-            self.writePreviewJson(rawRows, summaryRows, reportRows)
-            return
 
-        writeCsv(
-            self.config.outputDir / "polls.csv",
-            rawRows,
-            ["pollTitle", "pollDateText", "option", "voterName", "sourceHint"],
+        self.logger.action("write attendanceSummary.csv rows: %s", len(summaryRows))
+        if not self.config.dryRun:
+            writeCsv(
+                self.config.outputDir / "attendanceSummary.csv",
+                summaryRows,
+                ["name", "yesCount", "noCount", "totalVotes", "pollsResponded"],
+            )
+
+        self.logger.action(
+            "write attendanceReport.csv rows: %s", max(0, len(reportRows) - 2)
         )
-        writeCsv(
-            self.config.outputDir / "attendanceSummary.csv",
-            summaryRows,
-            ["name", "yesCount", "noCount", "totalVotes", "pollsResponded"],
-        )
-        self.writeAttendanceReportCsv(
-            self.config.outputDir / "attendanceReport.csv",
-            reportRows,
-        )
+        if not self.config.dryRun:
+            self.writeAttendanceReportCsv(
+                self.config.outputDir / "attendanceReport.csv",
+                reportRows,
+            )
+
         self.writePreviewJson(rawRows, summaryRows, reportRows)
-        self.logger.info("%sexport complete", self.prefix)
+        self.logger.done("attendance export")
 
     def writePreviewJson(
         self,
@@ -122,13 +101,12 @@ class AttendanceExporter(DryRunMixin):
             "summaryRows": summaryRows,
             "attendanceReportRows": reportRows,
         }
-        if self.config.dryRun:
-            self.logger.info("%swould write preview json: %s", self.prefix, previewPath)
-            return
 
-        previewPath.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        self.logger.action("write preview json: %s", previewPath)
+        if not self.config.dryRun:
+            previewPath.write_text(
+                json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
 
     def writeAttendanceReportCsv(self, path: Path, rows: list[list[str]]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -140,6 +118,10 @@ class AttendanceExporter(DryRunMixin):
         return self.config.outputDir / "pollCache.json"
 
     def loadPollCache(self) -> OrderedDict[str, list[PollRecord]]:
+        if IGNORE_POLL_CACHE:
+            self.logger.info("poll cache ignored")
+            return OrderedDict()
+
         cachePath = self.getPollCachePath()
         if not cachePath.exists():
             return OrderedDict()
@@ -148,26 +130,20 @@ class AttendanceExporter(DryRunMixin):
             payload = json.loads(cachePath.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             self.logger.warning(
-                "Poll cache is not valid JSON and will be ignored: %s", cachePath
+                "poll cache is not valid json and will be ignored: %s", cachePath
             )
             return OrderedDict()
 
         if payload.get("version") != POLL_CACHE_VERSION:
-            self.logger.info(
-                "%signoring old poll cache version: %s", self.prefix, cachePath
-            )
+            self.logger.info("ignoring old poll cache version: %s", cachePath)
             return OrderedDict()
 
         if payload.get("groupName") != self.config.groupName:
-            self.logger.info(
-                "%signoring poll cache for different group: %s", self.prefix, cachePath
-            )
+            self.logger.info("ignoring poll cache for different group: %s", cachePath)
             return OrderedDict()
 
         if payload.get("month") != self.config.monthWindow.monthKey:
-            self.logger.info(
-                "%signoring poll cache for different month: %s", self.prefix, cachePath
-            )
+            self.logger.info("ignoring poll cache for different month: %s", cachePath)
             return OrderedDict()
 
         cachedPolls: OrderedDict[str, list[PollRecord]] = OrderedDict()
@@ -182,9 +158,7 @@ class AttendanceExporter(DryRunMixin):
             if records:
                 cachedPolls[pollKey] = records
 
-        self.logger.info(
-            "%sloaded cached poll result(s): %s", self.prefix, len(cachedPolls)
-        )
+        self.logger.info("loaded cached poll result(s): %s", len(cachedPolls))
         return cachedPolls
 
     def savePollCache(
@@ -192,28 +166,23 @@ class AttendanceExporter(DryRunMixin):
     ) -> None:
         cachePath = self.getPollCachePath()
 
-        if self.config.dryRun:
-            self.logger.info("%swould write poll cache: %s", self.prefix, cachePath)
-            return
-
-        cachePath.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "version": POLL_CACHE_VERSION,
-            "groupName": self.config.groupName,
-            "month": self.config.monthWindow.monthKey,
-            "savedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "recentPollsToRecheck": RECENT_POLLS_TO_RECHECK,
-            "polls": {
-                pollKey: [asdict(record) for record in records]
-                for pollKey, records in recordsByPollKey.items()
-            },
-        }
-        cachePath.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-        self.logger.info(
-            "%spoll cache written: %s poll(s)", self.prefix, len(recordsByPollKey)
-        )
+        self.logger.action("write poll cache: %s", cachePath)
+        if not self.config.dryRun:
+            cachePath.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "version": POLL_CACHE_VERSION,
+                "groupName": self.config.groupName,
+                "month": self.config.monthWindow.monthKey,
+                "savedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "recentPollsToRecheck": RECENT_POLLS_TO_RECHECK,
+                "polls": {
+                    pollKey: [asdict(record) for record in records]
+                    for pollKey, records in recordsByPollKey.items()
+                },
+            }
+            cachePath.write_text(
+                json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
 
     def recordsFromCacheRows(self, rows: list[dict]) -> list[PollRecord]:
         records: list[PollRecord] = []
@@ -279,12 +248,6 @@ class AttendanceExporter(DryRunMixin):
         return outputRows
 
     def buildAttendanceReportRows(self, records: list[PollRecord]) -> list[list[str]]:
-        """Build a two-row-header report with dynamic sessions.
-
-        Sessions are discovered from scraped poll titles. Week numbers are inferred
-        per repeated session name: the first poll for a session is week 1, the
-        second poll for that same session is week 2, and so on.
-        """
         if not records:
             return [[""], ["name"]]
 
@@ -408,9 +371,7 @@ class AttendanceExporter(DryRunMixin):
 
                 pollLocators = self.findPollCards(page)
                 totalPolls = len(pollLocators)
-                self.logger.info(
-                    "%scandidate poll cards found: %s", self.prefix, totalPolls
-                )
+                self.logger.info("candidate poll cards found: %s", totalPolls)
 
                 for index, locator in enumerate(pollLocators, start=1):
                     if (
@@ -418,19 +379,11 @@ class AttendanceExporter(DryRunMixin):
                         and pollCount >= self.config.limitPolls
                     ):
                         self.logger.info(
-                            "%spoll limit reached: %s",
-                            self.prefix,
-                            self.config.limitPolls,
+                            "poll limit reached: %s", self.config.limitPolls
                         )
                         break
 
-                    try:
-                        locator.scroll_into_view_if_needed(
-                            timeout=self.config.timeoutMs
-                        )
-                        sourceText = locator.inner_text(timeout=self.config.timeoutMs)
-                    except Exception:
-                        sourceText = ""
+                    sourceText = self.extractPollSourceText(locator)
 
                     if (
                         self.config.pollTitleFilter
@@ -438,8 +391,7 @@ class AttendanceExporter(DryRunMixin):
                         not in sourceText.lower()
                     ):
                         self.logger.info(
-                            "%sskipping poll due to title filter: %s",
-                            self.prefix,
+                            "skipping poll due to title filter: %s",
                             self.config.pollTitleFilter,
                         )
                         continue
@@ -452,8 +404,7 @@ class AttendanceExporter(DryRunMixin):
 
                     if cachedRecords and not shouldRecheck:
                         self.logger.info(
-                            "%susing cached poll %s/%s: %s",
-                            self.prefix,
+                            "using cached poll %s/%s: %s",
                             index,
                             totalPolls,
                             pollTitle,
@@ -463,16 +414,14 @@ class AttendanceExporter(DryRunMixin):
 
                     if cachedRecords and shouldRecheck:
                         self.logger.info(
-                            "%srechecking recent poll %s/%s: %s",
-                            self.prefix,
+                            "rechecking recent poll %s/%s: %s",
                             index,
                             totalPolls,
                             pollTitle,
                         )
                     else:
                         self.logger.info(
-                            "%sopening poll %s/%s: %s",
-                            self.prefix,
+                            "opening poll %s/%s: %s",
                             index,
                             totalPolls,
                             pollTitle,
@@ -481,56 +430,61 @@ class AttendanceExporter(DryRunMixin):
                     try:
                         self.openPollVotes(locator)
                     except Exception as exc:
-                        self.logger.warning("Unable to open poll votes dialog: %s", exc)
+                        self.logger.warning("unable to open poll votes dialog: %s", exc)
                         continue
 
-                    dialog = self.waitForDialog(page)
-                    self.expandAllVoters(dialog)
+                    dialog = None
+                    try:
+                        dialog = self.waitForDialog(page)
+                        self.expandAllVoters(dialog)
 
-                    pollTitle = (
-                        self.extractPollTitle(dialog, sourceText=sourceText)
-                        or "unknown poll"
-                    )
-                    pollDateText = self.extractLikelyDateText(sourceText) or ""
-                    pollKey = self.buildPollKeyFromParts(
-                        pollTitle=pollTitle,
-                        pollDateText=pollDateText,
-                        sourceHint=sourceText[:240],
-                    )
-                    pollRecords: list[PollRecord] = []
-
-                    yesVoters = self.extractOptionVoters(
-                        dialog, optionTexts=self.selectors.yesOptionTexts
-                    )
-                    for voterName in yesVoters:
-                        pollRecords.append(
-                            PollRecord(
-                                pollTitle=pollTitle,
-                                pollDateText=pollDateText,
-                                option="Yes",
-                                voterName=voterName,
-                                sourceHint=sourceText[:240],
-                            )
+                        pollTitle = (
+                            self.extractPollTitle(dialog, sourceText=sourceText)
+                            or "unknown poll"
                         )
-
-                    if self.config.includeNoVotes:
-                        noVoters = self.extractOptionVoters(
-                            dialog, optionTexts=self.selectors.noOptionTexts
+                        pollDateText = self.extractLikelyDateText(sourceText) or ""
+                        pollKey = self.buildPollKeyFromParts(
+                            pollTitle=pollTitle,
+                            pollDateText=pollDateText,
+                            sourceHint=sourceText[:240],
                         )
-                        for voterName in noVoters:
+                        pollRecords: list[PollRecord] = []
+
+                        yesVoters = self.extractOptionVoters(
+                            dialog, optionTexts=self.selectors.yesOptionTexts
+                        )
+                        for voterName in yesVoters:
                             pollRecords.append(
                                 PollRecord(
                                     pollTitle=pollTitle,
                                     pollDateText=pollDateText,
-                                    option="No",
+                                    option="Yes",
                                     voterName=voterName,
                                     sourceHint=sourceText[:240],
                                 )
                             )
 
-                    recordsByPollKey[pollKey] = self.deduplicateRecords(pollRecords)
-                    pollCount += 1
-                    self.closeDialog(page, dialog)
+                        if self.config.includeNoVotes:
+                            noVoters = self.extractOptionVoters(
+                                dialog, optionTexts=self.selectors.noOptionTexts
+                            )
+                            for voterName in noVoters:
+                                pollRecords.append(
+                                    PollRecord(
+                                        pollTitle=pollTitle,
+                                        pollDateText=pollDateText,
+                                        option="No",
+                                        voterName=voterName,
+                                        sourceHint=sourceText[:240],
+                                    )
+                                )
+
+                        recordsByPollKey[pollKey] = self.deduplicateRecords(pollRecords)
+                        pollCount += 1
+                    except Exception as exc:
+                        self.logger.warning("unable to scrape poll votes: %s", exc)
+                    finally:
+                        self.closeDialog(page, dialog)
 
             finally:
                 browserContext.close()
@@ -540,7 +494,7 @@ class AttendanceExporter(DryRunMixin):
 
     def waitForWhatsAppReady(self, page) -> None:
         page.wait_for_load_state("domcontentloaded")
-        self.logger.info("%swaiting for WhatsApp Web to be ready...", self.prefix)
+        self.logger.info("waiting for WhatsApp Web to be ready")
         deadline = time.time() + max(60, self.config.timeoutMs / 1000)
 
         while time.time() < deadline:
@@ -548,9 +502,7 @@ class AttendanceExporter(DryRunMixin):
                 try:
                     locator = page.locator(selector).first
                     if locator.is_visible(timeout=1000):
-                        self.logger.info(
-                            "%swhatsapp ready via selector: %s", self.prefix, selector
-                        )
+                        self.logger.info("whatsapp ready via selector: %s", selector)
                         return
                 except Exception:
                     continue
@@ -561,7 +513,7 @@ class AttendanceExporter(DryRunMixin):
         )
 
     def openGroup(self, page, groupName: str) -> None:
-        self.logger.info("%sopening group: %s", self.prefix, groupName)
+        self.logger.info("opening group: %s", groupName)
 
         lastError: Optional[Exception] = None
         for selector in self.selectors.iterSearchSelectors():
@@ -581,7 +533,7 @@ class AttendanceExporter(DryRunMixin):
         candidate.click(timeout=self.config.timeoutMs)
 
     def scrollChatHistory(self, page, scrollPasses: int = 12) -> None:
-        self.logger.info("%sscrolling chat history to load older polls...", self.prefix)
+        self.logger.info("scrolling chat history to load older polls")
         for _ in range(scrollPasses):
             page.mouse.wheel(0, -2000)
             page.wait_for_timeout(500)
@@ -590,7 +542,13 @@ class AttendanceExporter(DryRunMixin):
         pollLocators: list = []
         seenKeys: set[str] = set()
 
-        for selector in self.selectors.iterPollSelectors():
+        selectors = (
+            '[data-testid="poll-view-votes"]',
+            'div[role="button"]:has-text("View votes")',
+            'div:has-text("View votes")',
+        )
+
+        for selector in selectors:
             try:
                 locator = page.locator(selector)
                 count = locator.count()
@@ -598,12 +556,11 @@ class AttendanceExporter(DryRunMixin):
                 continue
 
             for index in range(count):
-                item = locator.nth(index)
-                try:
-                    text = item.inner_text(timeout=1000)
-                except Exception:
-                    text = f"item-{index}"
-                key = f"{selector}|{text[:120]}"
+                item = self.resolvePollButton(locator.nth(index))
+                sourceText = self.extractPollSourceText(item)
+                if self.selectors.viewVotesText.lower() not in sourceText.lower():
+                    continue
+                key = self.extractMessageKey(item) or f"{selector}|{sourceText[:120]}"
                 if key in seenKeys:
                     continue
                 seenKeys.add(key)
@@ -611,18 +568,82 @@ class AttendanceExporter(DryRunMixin):
 
         return pollLocators
 
+    def resolvePollButton(self, locator):
+        try:
+            text = locator.inner_text(timeout=500)
+            if self.selectors.viewVotesText.lower() in text.lower():
+                return locator
+        except Exception:
+            pass
+
+        for selector in (
+            '[data-testid="poll-view-votes"]',
+            'div[role="button"]:has-text("View votes")',
+            f'text="{self.selectors.viewVotesText}"',
+        ):
+            try:
+                button = locator.locator(selector).first
+                if button.is_visible(timeout=500):
+                    return button
+            except Exception:
+                continue
+        return locator
+
+    def extractMessageKey(self, locator) -> str:
+        for selector in (
+            'xpath=ancestor-or-self::*[@data-testid][contains(@data-testid, "msg")][1]',
+            "xpath=ancestor-or-self::*[@data-id][1]",
+        ):
+            try:
+                value = locator.locator(selector).first.get_attribute(
+                    "data-testid", timeout=1000
+                )
+                if value:
+                    return value
+            except Exception:
+                pass
+            try:
+                value = locator.locator(selector).first.get_attribute(
+                    "data-id", timeout=1000
+                )
+                if value:
+                    return value
+            except Exception:
+                pass
+        return ""
+
+    def extractPollSourceText(self, locator) -> str:
+        for selector in (
+            'xpath=ancestor-or-self::*[@data-testid][contains(@data-testid, "msg")][1]',
+            "xpath=ancestor-or-self::*[@data-id][1]",
+            'xpath=ancestor::*[contains(., "View votes")][1]',
+        ):
+            try:
+                text = locator.locator(selector).first.inner_text(timeout=1000)
+                if text.strip():
+                    return text
+            except Exception:
+                continue
+
+        try:
+            return locator.inner_text(timeout=1000)
+        except Exception:
+            return ""
+
     def waitForDialog(self, page):
+        timeoutMs = min(1500, self.config.timeoutMs)
         for selector in self.selectors.iterDialogSelectors():
             try:
                 dialog = page.locator(selector).last
-                dialog.wait_for(state="visible", timeout=self.config.timeoutMs)
-                return dialog
+                dialog.wait_for(state="visible", timeout=timeoutMs)
+                text = dialog.inner_text(timeout=timeoutMs)
+                if text.strip():
+                    return dialog
             except Exception:
                 continue
-        raise TimeoutError("unable to locate votes dialog")
+        raise TimeoutError("unable to locate readable votes dialog")
 
     def expandAllVoters(self, dialog) -> None:
-        """Expand all lazy-loaded voter rows inside the current poll dialog."""
         for _ in range(10):
             clicked = False
             try:
@@ -673,13 +694,6 @@ class AttendanceExporter(DryRunMixin):
         return match.group(0) if match else ""
 
     def extractOptionVoters(self, dialog, optionTexts: Iterable[str]) -> list[str]:
-        """
-        Heuristic extractor.
-
-        The exact DOM for poll results may change. This implementation looks for
-        a visible section with the option label, then collects person-like rows
-        beneath it until the next option heading.
-        """
         optionNames = tuple(optionTexts)
         dialogText = dialog.inner_text(timeout=self.config.timeoutMs)
         lines = [line.strip() for line in dialogText.splitlines() if line.strip()]
@@ -780,6 +794,15 @@ class AttendanceExporter(DryRunMixin):
 
     def openPollVotes(self, locator) -> None:
         locator.scroll_into_view_if_needed(timeout=self.config.timeoutMs)
+
+        try:
+            if locator.is_visible(timeout=1000):
+                text = locator.inner_text(timeout=1000)
+                if self.selectors.viewVotesText.lower() in text.lower():
+                    locator.click(timeout=self.config.timeoutMs)
+                    return
+        except Exception:
+            pass
 
         clickCandidates = (
             '[data-testid="poll-view-votes"]',
