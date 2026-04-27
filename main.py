@@ -45,31 +45,25 @@ class Config:
 # -------------------------------------------------------------------
 def buildParser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Export WhatsApp poll attendance for a given group and month."
+        description="Export WhatsApp poll attendance for a group and month."
     )
 
-    parser.add_argument("--group", required=True, dest="groupName")
-    parser.add_argument("--month")
-
-    parser.add_argument("--output", type=Path)
-
     parser.add_argument(
-        "--user-data-dir",
-        type=Path,
-        default=defaultUserDataDir(),
+        "-g",
+        "--group",
+        required=True,
+        dest="groupName",
+        help="exact WhatsApp group name",
     )
 
-    parser.add_argument("--timeout-ms", type=int, default=15000)
-    parser.add_argument("--limit-polls", type=int)
-    parser.add_argument("--browser-channel")
-
-    parser.add_argument("--include-no-votes", action="store_true")
-    parser.add_argument("--poll-title-filter")
-
-    parser.add_argument("--headless", action="store_true")
-    parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "-m",
+        "--month",
+        help="target month in YYYY-MM (default: previous month)",
+    )
 
     parser.add_argument(
+        "-y",
         "--confirm",
         action="store_true",
         help="execute changes (default is dry-run)",
@@ -84,25 +78,23 @@ def buildParser() -> argparse.ArgumentParser:
 def buildConfig(args: argparse.Namespace, dryRun: bool) -> Config:
     monthWindow = resolveMonthWindow(args.month)
 
-    outputDir = ensureOutputDir(
-        args.output or defaultOutputDir(args.groupName, monthWindow)
-    )
+    outputDir = ensureOutputDir(defaultOutputDir(args.groupName, monthWindow))
 
-    userDataDir = ensureOutputDir(args.user_data_dir)
+    userDataDir = ensureOutputDir(defaultUserDataDir())
 
     runtime = RuntimeConfig(
         groupName=args.groupName,
         monthWindow=monthWindow,
         outputDir=outputDir,
         userDataDir=userDataDir,
-        headless=args.headless,
+        headless=False,
         dryRun=dryRun,
-        timeoutMs=args.timeout_ms,
-        limitPolls=args.limit_polls,
-        browserChannel=args.browser_channel,
-        includeNoVotes=args.include_no_votes,
-        resume=args.resume,
-        pollTitleFilter=args.poll_title_filter,
+        timeoutMs=15000,
+        limitPolls=None,
+        browserChannel=None,
+        includeNoVotes=False,
+        resume=False,
+        pollTitleFilter=None,
     )
 
     return Config(runtime=runtime)
