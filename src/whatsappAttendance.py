@@ -147,19 +147,27 @@ class AttendanceExporter(DryRunMixin):
         try:
             payload = json.loads(cachePath.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            self.logger.warning("Poll cache is not valid JSON and will be ignored: %s", cachePath)
+            self.logger.warning(
+                "Poll cache is not valid JSON and will be ignored: %s", cachePath
+            )
             return OrderedDict()
 
         if payload.get("version") != POLL_CACHE_VERSION:
-            self.logger.info("%signoring old poll cache version: %s", self.prefix, cachePath)
+            self.logger.info(
+                "%signoring old poll cache version: %s", self.prefix, cachePath
+            )
             return OrderedDict()
 
         if payload.get("groupName") != self.config.groupName:
-            self.logger.info("%signoring poll cache for different group: %s", self.prefix, cachePath)
+            self.logger.info(
+                "%signoring poll cache for different group: %s", self.prefix, cachePath
+            )
             return OrderedDict()
 
         if payload.get("month") != self.config.monthWindow.monthKey:
-            self.logger.info("%signoring poll cache for different month: %s", self.prefix, cachePath)
+            self.logger.info(
+                "%signoring poll cache for different month: %s", self.prefix, cachePath
+            )
             return OrderedDict()
 
         cachedPolls: OrderedDict[str, list[PollRecord]] = OrderedDict()
@@ -179,7 +187,9 @@ class AttendanceExporter(DryRunMixin):
         )
         return cachedPolls
 
-    def savePollCache(self, recordsByPollKey: OrderedDict[str, list[PollRecord]]) -> None:
+    def savePollCache(
+        self, recordsByPollKey: OrderedDict[str, list[PollRecord]]
+    ) -> None:
         cachePath = self.getPollCachePath()
 
         if self.config.dryRun:
@@ -469,17 +479,10 @@ class AttendanceExporter(DryRunMixin):
                         )
 
                     try:
-                        locator.click(timeout=self.config.timeoutMs)
-                    except Exception:
-                        try:
-                            locator.get_by_text(
-                                self.selectors.viewVotesText, exact=False
-                            ).click(timeout=self.config.timeoutMs)
-                        except Exception as exc:
-                            self.logger.warning(
-                                "Unable to open poll votes dialog: %s", exc
-                            )
-                            continue
+                        self.openPollVotes(locator)
+                    except Exception as exc:
+                        self.logger.warning("Unable to open poll votes dialog: %s", exc)
+                        continue
 
                     dialog = self.waitForDialog(page)
                     self.expandAllVoters(dialog)
@@ -642,16 +645,27 @@ class AttendanceExporter(DryRunMixin):
                 break
 
     def extractPollTitle(self, dialog=None, sourceText: str = "") -> str:
+        ignoredLines = {
+            "all",
+            "view votes",
+            "select one or more",
+            "poll details",
+            "yes",
+            "no",
+        }
+
         lines = [line.strip() for line in sourceText.splitlines() if line.strip()]
 
-        # Typical poll card text:
-        # 0 = sender
-        # 1 = poll title/session
-        # 2 = Select one or more
-        if len(lines) >= 2:
-            return lines[1]
-        if lines:
-            return lines[0]
+        for line in lines:
+            lowered = line.lower()
+            if lowered in ignoredLines:
+                continue
+            if self.looksLikeVoteCount(line):
+                continue
+            if re.search(r"\b\d{1,2}:\d{2}\b", line):
+                continue
+            return line
+
         return "unknown poll"
 
     def extractLikelyDateText(self, sourceText: str) -> str:
@@ -763,3 +777,22 @@ class AttendanceExporter(DryRunMixin):
             seen.add(key)
             output.append(record)
         return output
+
+    def openPollVotes(self, locator) -> None:
+        locator.scroll_into_view_if_needed(timeout=self.config.timeoutMs)
+
+        clickCandidates = (
+            '[data-testid="poll-view-votes"]',
+            f'text="{self.selectors.viewVotesText}"',
+        )
+
+        for selector in clickCandidates:
+            try:
+                button = locator.locator(selector).first
+                if button.is_visible(timeout=1000):
+                    button.click(timeout=self.config.timeoutMs)
+                    return
+            except Exception:
+                continue
+
+        locator.click(timeout=self.config.timeoutMs)
