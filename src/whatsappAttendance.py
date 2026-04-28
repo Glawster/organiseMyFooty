@@ -539,34 +539,8 @@ class AttendanceExporter:
             page.wait_for_timeout(500)
 
     def findPollCards(self, page) -> list:
-        pollLocators: list = []
-        seenKeys: set[str] = set()
-
-        selectors = (
-            '[data-testid="poll-view-votes"]',
-            'div[role="button"]:has-text("View votes")',
-            'div:has-text("View votes")',
-        )
-
-        for selector in selectors:
-            try:
-                locator = page.locator(selector)
-                count = locator.count()
-            except Exception:
-                continue
-
-            for index in range(count):
-                item = self.resolvePollButton(locator.nth(index))
-                sourceText = self.extractPollSourceText(item)
-                if self.selectors.viewVotesText.lower() not in sourceText.lower():
-                    continue
-                key = self.extractMessageKey(item) or f"{selector}|{sourceText[:120]}"
-                if key in seenKeys:
-                    continue
-                seenKeys.add(key)
-                pollLocators.append(item)
-
-        return pollLocators
+        locator = page.locator('[data-testid="poll-view-votes"]')
+        return [locator.nth(i) for i in range(locator.count())]
 
     def resolvePollButton(self, locator):
         try:
@@ -794,28 +768,4 @@ class AttendanceExporter:
 
     def openPollVotes(self, locator) -> None:
         locator.scroll_into_view_if_needed(timeout=self.config.timeoutMs)
-
-        try:
-            if locator.is_visible(timeout=1000):
-                text = locator.inner_text(timeout=1000)
-                if self.selectors.viewVotesText.lower() in text.lower():
-                    locator.click(timeout=self.config.timeoutMs)
-                    return
-        except Exception:
-            pass
-
-        clickCandidates = (
-            '[data-testid="poll-view-votes"]',
-            f'text="{self.selectors.viewVotesText}"',
-        )
-
-        for selector in clickCandidates:
-            try:
-                button = locator.locator(selector).first
-                if button.is_visible(timeout=1000):
-                    button.click(timeout=self.config.timeoutMs)
-                    return
-            except Exception:
-                continue
-
         locator.click(timeout=self.config.timeoutMs)
