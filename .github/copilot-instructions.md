@@ -162,13 +162,45 @@ logger.value("source dir", path)         # → ...source dir: /path
 logger.action("moving file: src → dest") # → ...[] moving file: src → dest  (when dryRun=True)
 ```
 
-**The `action()` / dry-run guard pattern:**
+Avoid:
 
 ``` python
-# Preferred: use logger.action() for operations guarded by dryRun
-logger.action(f"moving file: {src} → {dest}")
+logger.info("group: %s", config.groupName)
+logger.doing(f"group...{config.groupName}")
+```
+
+2. Use `logger.info()` for multiple values or narrative messages.
+
+``` python
+logger.info("opening poll %s/%s: %s", index, totalPolls, pollTitle)
+```
+
+3. Use `logger.doing()` only for lifecycle steps with no embedded values.
+
+``` python
+logger.doing("attendance export")
+logger.doing("scraping polls")
+```
+
+Avoid:
+
+``` python
+logger.doing(f"attendance export for {group}")
+```
+
+4. Use `logger.action()` for side effects (dry-run aware).
+
+``` python
+logger.action("write polls.csv rows: %s", count)
+```
+
+Use `logger.action()` with the write guard. Call `logger.done()` only if the action succeeds:
+
+``` python
+logger.action("moving file")
 if not dryRun:
     shutil.move(src, dest)
+    logger.done("moving file")
 ```
 
 **`drawBox()` for prominent log entries:**
