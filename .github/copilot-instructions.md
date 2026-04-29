@@ -279,6 +279,16 @@ logger.action("moving file: src → dest") # → ...[] moving file: src → dest
 ### The `action()` / dry-run guard pattern
 
 ``` python
+Avoid:
+
+``` python
+logger.info("group: %s", config.groupName)
+logger.doing(f"group...{config.groupName}")
+```
+
+2. Use `logger.info()` for multiple values or narrative messages.
+
+``` python
 logger.info("opening poll %s/%s: %s", index, totalPolls, pollTitle)
 ```
 
