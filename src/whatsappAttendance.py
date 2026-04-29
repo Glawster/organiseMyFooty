@@ -48,16 +48,23 @@ class AttendanceExporter:
         self.logger = logger
 
     def run(self) -> None:
-        self.logger.doing("starting export for group")
-        self.logger.value("month window", self.config.monthWindow.monthKey)
-        self.logger.value("output dir", self.config.outputDir)
+        self.logger.doing("attendance export")
+        self.logger.info("starting export for group: %s", self.config.groupName)
+        self.logger.info("month window: %s", self.config.monthWindow.monthKey)
+        self.logger.info("output dir: %s", self.config.outputDir)
 
         records = self.collectPollAttendance()
-        self.logger.value("poll vote rows collected", len(records))
+        self.logger.info("poll vote rows collected: %s", len(records))
 
         rawRows = [asdict(record) for record in records]
         summaryRows = self.buildSummaryRows(records)
         reportRows = self.buildAttendanceReportRows(records)
+
+        if not rawRows:
+            self.logger.warning(
+                "no poll rows collected; exports will not be overwritten"
+            )
+            return
 
         self.logger.action("write polls.csv rows: %s", len(rawRows))
         if not self.config.dryRun:
@@ -165,6 +172,12 @@ class AttendanceExporter:
         self, recordsByPollKey: OrderedDict[str, list[PollRecord]]
     ) -> None:
         cachePath = self.getPollCachePath()
+
+        if not recordsByPollKey:
+            self.logger.warning(
+                "poll cache not written because no poll records were scraped"
+            )
+            return
 
         self.logger.action("write poll cache: %s", cachePath)
         if not self.config.dryRun:
@@ -428,17 +441,19 @@ class AttendanceExporter:
                         )
 
                     try:
-                        self.openPollVotes(locator)
+                        if not self.openPollVotes(locator):
+                            continue
                     except Exception as exc:
                         self.logger.warning("unable to open poll votes dialog: %s", exc)
                         continue
 
                     dialog = None
                     try:
-                        dialog = self.waitForDialog(page)
+                        dialog, dialogText = self.waitForDialog(page)
                         self.expandAllVoters(dialog)
+                        dialogText = self.readDialogText(dialog, fallback=dialogText)
 
-                        pollTitle = (
+                        pollTitle = self.extractPollTitleFromDialog(dialogText) or (
                             self.extractPollTitle(dialog, sourceText=sourceText)
                             or "unknown poll"
                         )
@@ -450,8 +465,8 @@ class AttendanceExporter:
                         )
                         pollRecords: list[PollRecord] = []
 
-                        yesVoters = self.extractOptionVoters(
-                            dialog, optionTexts=self.selectors.yesOptionTexts
+                        yesVoters = self.extractOptionVotersFromText(
+                            dialogText, optionTexts=self.selectors.yesOptionTexts
                         )
                         for voterName in yesVoters:
                             pollRecords.append(
@@ -465,8 +480,8 @@ class AttendanceExporter:
                             )
 
                         if self.config.includeNoVotes:
-                            noVoters = self.extractOptionVoters(
-                                dialog, optionTexts=self.selectors.noOptionTexts
+                            noVoters = self.extractOptionVotersFromText(
+                                dialogText, optionTexts=self.selectors.noOptionTexts
                             )
                             for voterName in noVoters:
                                 pollRecords.append(
@@ -539,8 +554,30 @@ class AttendanceExporter:
             page.wait_for_timeout(500)
 
     def findPollCards(self, page) -> list:
-        locator = page.locator('[data-testid="poll-view-votes"]')
-        return [locator.nth(i) for i in range(locator.count())]
+        pollLocators: list = []
+        seenKeys: set[str] = set()
+
+        selectors = ('[data-testid="poll-view-votes"]',)
+
+        for selector in selectors:
+            try:
+                locator = page.locator(selector)
+                count = locator.count()
+            except Exception:
+                continue
+
+            for index in range(count):
+                item = self.resolvePollButton(locator.nth(index))
+                sourceText = self.extractPollSourceText(item)
+                if self.selectors.viewVotesText.lower() not in sourceText.lower():
+                    continue
+                key = self.extractMessageKey(item) or f"{selector}|{sourceText[:120]}"
+                if key in seenKeys:
+                    continue
+                seenKeys.add(key)
+                pollLocators.append(item)
+
+        return pollLocators
 
     def resolvePollButton(self, locator):
         try:
@@ -605,39 +642,62 @@ class AttendanceExporter:
             return ""
 
     def waitForDialog(self, page):
-        timeoutMs = min(1500, self.config.timeoutMs)
-        for selector in self.selectors.iterDialogSelectors():
+        try:
+            header = page.get_by_text("Poll details", exact=False).last
+            header.wait_for(state="visible", timeout=3000)
+
+            panel = header.locator("xpath=ancestor::*[contains(., 'members voted')][1]")
+            panel.wait_for(state="visible", timeout=3000)
+
+            text = panel.inner_text(timeout=3000)
+            self.logger.value("poll panel sample", text[:300])
+            return panel, text
+
+        except Exception:
+            self.logPollPanelDiagnostics(page)
+            raise TimeoutError("unable to locate poll results panel")
+
+    def readDialogText(self, dialog, fallback: str = "") -> str:
+        try:
+            text = dialog.inner_text(timeout=2000)
+            return text if text.strip() else fallback
+        except Exception:
+            return fallback
+
+    def logPollPanelDiagnostics(self, page) -> None:
+        for textAnchor in ("Poll details", "View votes", "Yes", "No"):
             try:
-                dialog = page.locator(selector).last
-                dialog.wait_for(state="visible", timeout=timeoutMs)
-                text = dialog.inner_text(timeout=timeoutMs)
-                if text.strip():
-                    return dialog
+                count = page.get_by_text(textAnchor, exact=False).count()
+                self.logger.value(f"visible text count {textAnchor}", count)
             except Exception:
                 continue
-        raise TimeoutError("unable to locate readable votes dialog")
 
-    def expandAllVoters(self, dialog) -> None:
-        for _ in range(10):
-            clicked = False
+        try:
+            bodyText = page.locator("body").inner_text(timeout=2000)
+            self.logger.value("body text sample", bodyText[-500:])
+        except Exception:
+            pass
+
+    def expandAllVoters(self, panel) -> None:
+        for _ in range(5):
             try:
-                buttons = dialog.get_by_text(re.compile(r"^See all", re.IGNORECASE))
+                buttons = panel.get_by_text("See all", exact=False)
                 count = buttons.count()
+
+                if count == 0:
+                    return
+
+                for i in range(count):
+                    try:
+                        btn = buttons.nth(i)
+                        if btn.is_visible(timeout=500):
+                            btn.click(timeout=2000)
+                            panel.page.wait_for_timeout(500)
+                    except Exception:
+                        continue
+
             except Exception:
-                break
-
-            for index in range(count):
-                try:
-                    button = buttons.nth(index)
-                    if button.is_visible(timeout=500):
-                        button.click(timeout=self.config.timeoutMs)
-                        dialog.page.wait_for_timeout(300)
-                        clicked = True
-                except Exception:
-                    continue
-
-            if not clicked:
-                break
+                return
 
     def extractPollTitle(self, dialog=None, sourceText: str = "") -> str:
         ignoredLines = {
@@ -668,8 +728,16 @@ class AttendanceExporter:
         return match.group(0) if match else ""
 
     def extractOptionVoters(self, dialog, optionTexts: Iterable[str]) -> list[str]:
+        try:
+            dialogText = dialog.inner_text(timeout=2000)
+        except Exception:
+            return []
+        return self.extractOptionVotersFromText(dialogText, optionTexts)
+
+    def extractOptionVotersFromText(
+        self, dialogText: str, optionTexts: Iterable[str]
+    ) -> list[str]:
         optionNames = tuple(optionTexts)
-        dialogText = dialog.inner_text(timeout=self.config.timeoutMs)
         lines = [line.strip() for line in dialogText.splitlines() if line.strip()]
 
         captured: list[str] = []
@@ -693,6 +761,27 @@ class AttendanceExporter:
                 captured.append(line)
 
         return self.cleanVoterNames(captured)
+
+    def extractPollTitleFromDialog(self, dialogText: str) -> str:
+        ignoredLines = {
+            "poll details",
+            "yes",
+            "no",
+            "view votes",
+            "select one or more",
+        }
+
+        for line in [line.strip() for line in dialogText.splitlines() if line.strip()]:
+            lowered = line.lower()
+            if lowered in ignoredLines:
+                continue
+            if "members voted" in lowered:
+                continue
+            if self.looksLikeVoteCount(line):
+                continue
+            return line
+
+        return ""
 
     def looksLikeVoteCount(self, line: str) -> bool:
         lowered = line.lower().strip()
@@ -766,6 +855,12 @@ class AttendanceExporter:
             output.append(record)
         return output
 
-    def openPollVotes(self, locator) -> None:
+    def openPollVotes(self, locator) -> bool:
+        disabled = locator.get_attribute("aria-disabled", timeout=1000)
+        if disabled == "true":
+            self.logger.info("poll skipped disabled")
+            return False
+
         locator.scroll_into_view_if_needed(timeout=self.config.timeoutMs)
         locator.click(timeout=self.config.timeoutMs)
+        return True
