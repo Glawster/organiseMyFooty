@@ -743,13 +743,12 @@ class AttendanceExporter:
             pass
 
     def expandAllVoters(self, panel) -> None:
-        for _ in range(5):
+        previousText = ""
+
+        for _ in range(20):
             try:
                 buttons = panel.get_by_text("See all", exact=False)
                 count = buttons.count()
-
-                if count == 0:
-                    return
 
                 for i in range(count):
                     try:
@@ -759,6 +758,16 @@ class AttendanceExporter:
                             panel.page.wait_for_timeout(500)
                     except Exception:
                         continue
+
+                panel.hover()
+                panel.page.mouse.wheel(0, 1200)
+                panel.page.wait_for_timeout(500)
+
+                currentText = panel.inner_text(timeout=2000)
+                if currentText == previousText:
+                    break
+
+                previousText = currentText
 
             except Exception:
                 return
