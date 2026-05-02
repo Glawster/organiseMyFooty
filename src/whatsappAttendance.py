@@ -382,6 +382,20 @@ class AttendanceExporter:
                 self.openGroup(page, self.config.groupName)
                 self.scrollChatHistory(page)
 
+                bodyText = page.locator("body").inner_text(timeout=3000)
+
+                self.logger.value(
+                    "view votes text count", bodyText.lower().count("view votes")
+                )
+                self.logger.value(
+                    "poll details text count", bodyText.lower().count("poll details")
+                )
+                self.logger.value(
+                    "football factory text count",
+                    bodyText.lower().count("football factory"),
+                )
+                self.logger.value("body text sample", bodyText[-2000:])
+
                 pollLocators = self.findPollCards(page)
                 totalPolls = len(pollLocators)
                 self.logger.info("candidate poll cards found: %s", totalPolls)
@@ -557,7 +571,11 @@ class AttendanceExporter:
         pollLocators: list = []
         seenKeys: set[str] = set()
 
-        selectors = ('[data-testid="poll-view-votes"]',)
+        selectors = (
+            '[data-testid="poll-view-votes"]',
+            'div[role="button"]:has-text("View votes")',
+            'text="View votes"',
+        )
 
         for selector in selectors:
             try:
