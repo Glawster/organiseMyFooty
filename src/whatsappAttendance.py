@@ -402,6 +402,15 @@ class AttendanceExporter:
         title = " ".join(pollTitle.split()).strip()
         return re.sub(r"\s+", " ", title) or "unknown session"
 
+    def isValidSessionPoll(self, pollTitle: str) -> bool:
+        return bool(
+            re.match(
+                r"^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+                pollTitle.strip(),
+                re.IGNORECASE,
+            )
+        )
+
     def collectPollAttendance(self) -> list[PollRecord]:
         from playwright.sync_api import sync_playwright
 
@@ -497,6 +506,13 @@ class AttendanceExporter:
                             self.extractPollTitle(dialog, sourceText=sourceText)
                             or "unknown poll"
                         )
+                        if not self.isValidSessionPoll(pollTitle):
+                            self.logger.info(
+                                "skipping poll with invalid session title: %s",
+                                pollTitle,
+                            )
+                            continue
+
                         rawDateText = self.extractLikelyDateText(sourceText) or ""
                         pollDateText = self.normaliseDateText(rawDateText)
                         pollKey = self.buildPollKeyFromParts(
@@ -862,8 +878,10 @@ class AttendanceExporter:
                 continue
             if re.search(r"\b\d{1,2}:\d{2}\b", value):
                 continue
-            if value.lower() in {"yes", "no", "you"}:
+            if value.lower() in {"yes", "no"}:
                 continue
+            if value.lower() == "you":
+                value = self.config.myName or "You"
             if value.lower().startswith("see all"):
                 continue
             if value.lower().endswith("vote") or value.lower().endswith("votes"):
