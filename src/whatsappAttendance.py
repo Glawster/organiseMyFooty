@@ -26,6 +26,7 @@ IGNORE_POLL_CACHE = True  # temporary while stabilising poll discovery
 class PollRecord:
     pollTitle: str
     pollDateText: str
+    sessionDateText: str
     option: str
     voterName: str
     sourceHint: str
@@ -35,6 +36,7 @@ class PollRecord:
 class PollSession:
     pollKey: str
     pollTitle: str
+    sessionDateText: str
     weekNumber: int
     sessionName: str
 
@@ -71,7 +73,14 @@ class AttendanceExporter:
             writeCsv(
                 self.config.outputDir / "polls.csv",
                 rawRows,
-                ["pollTitle", "pollDateText", "option", "voterName", "sourceHint"],
+                [
+                    "pollTitle",
+                    "pollDateText",
+                    "sessionDateText",
+                    "option",
+                    "voterName",
+                    "sourceHint",
+                ],
             )
 
         self.logger.action("write attendanceSummary.csv rows: %s", len(summaryRows))
@@ -207,6 +216,10 @@ class AttendanceExporter:
                     PollRecord(
                         pollTitle=str(row["pollTitle"]),
                         pollDateText=str(row["pollDateText"]),
+                        sessionDateText=self.calculateSessionDateText(
+                            pollTitle=str(row["pollTitle"]),
+                            pollDateText=str(row["pollDateText"]),
+                        ),
                         option=str(row["option"]),
                         voterName=str(row["voterName"]),
                         sourceHint=str(row["sourceHint"]),
@@ -262,49 +275,92 @@ class AttendanceExporter:
 
     def buildAttendanceReportRows(self, records: list[PollRecord]) -> list[list[str]]:
         if not records:
-            return [[""], ["name"]]
+            return [[""], [""], ["name"]]
 
         pollSessions = self.buildPollSessions(records)
-        sessionNames = self.extractOrderedSessionNames(pollSessions)
+
         maxWeek = max(session.weekNumber for session in pollSessions.values())
 
+        sessionsByWeek: dict[int, list[PollSession]] = {}
+        for session in pollSessions.values():
+            sessionsByWeek.setdefault(session.weekNumber, []).append(session)
+
+        for week in sessionsByWeek.values():
+            week.sort(key=lambda s: s.sessionDateText)
+
+        dateHeader = [""]
         weekHeader = [""]
         sessionHeader = ["name"]
-        for weekNumber in range(1, maxWeek + 1):
-            for sessionIndex, sessionName in enumerate(sessionNames):
-                weekHeader.append(f"week {weekNumber}" if sessionIndex == 0 else "")
-                sessionHeader.append(sessionName)
+        columns: list[PollSession] = []
 
-        voterNames = sorted({record.voterName for record in records}, key=str.casefold)
+        for weekNumber in range(1, maxWeek + 1):
+            for i, session in enumerate(sessionsByWeek.get(weekNumber, [])):
+                dateHeader.append(session.sessionDateText)
+                weekHeader.append(f"week {weekNumber}" if i == 0 else "")
+                sessionHeader.append(session.sessionName)
+                columns.append(session)
+
+        voterNames = sorted({r.voterName for r in records}, key=str.casefold)
         attendance = self.buildAttendanceLookup(records, pollSessions)
 
-        rows = [weekHeader, sessionHeader]
-        for voterName in voterNames:
-            row = [voterName]
-            for weekNumber in range(1, maxWeek + 1):
-                for sessionName in sessionNames:
-                    row.append(attendance.get((voterName, weekNumber, sessionName), ""))
+        rows = [dateHeader, weekHeader, sessionHeader]
+
+        for voter in voterNames:
+            row = [voter]
+            for session in columns:
+                row.append(
+                    attendance.get(
+                        (voter, session.weekNumber, session.sessionName),
+                        "",
+                    )
+                )
             rows.append(row)
 
         return rows
 
+    def buildSessionWeekKey(self, sessionDateText: str) -> str:
+        if not sessionDateText:
+            return "unknown"
+        try:
+            sessionDate = datetime.strptime(sessionDateText, "%Y%m%d")
+        except ValueError:
+            return "unknown"
+
+        weekStart = sessionDate - timedelta(days=sessionDate.weekday())
+        return weekStart.strftime("%Y%m%d")
+
     def buildPollSessions(
         self, records: list[PollRecord]
     ) -> OrderedDict[str, PollSession]:
-        pollKeys: OrderedDict[str, str] = OrderedDict()
-        for record in records:
-            pollKeys.setdefault(self.buildPollKey(record), record.pollTitle)
 
-        sessionCounts: defaultdict[str, int] = defaultdict(int)
+        pollRows: OrderedDict[str, PollRecord] = OrderedDict()
+        for record in records:
+            pollRows.setdefault(self.buildPollKey(record), record)
+
+        sortedRows = sorted(
+            pollRows.items(),
+            key=lambda item: (
+                item[1].sessionDateText or "99999999",
+                item[1].pollTitle.casefold(),
+            ),
+        )
+
+        weekNumbersByKey: OrderedDict[str, int] = OrderedDict()
         pollSessions: OrderedDict[str, PollSession] = OrderedDict()
 
-        for pollKey, pollTitle in pollKeys.items():
-            sessionName = self.extractSessionName(pollTitle)
-            sessionCounts[sessionName] += 1
+        for pollKey, record in sortedRows:
+            sessionName = self.extractSessionName(record.pollTitle)
+
+            sessionWeekKey = self.buildSessionWeekKey(record.sessionDateText)
+
+            if sessionWeekKey not in weekNumbersByKey:
+                weekNumbersByKey[sessionWeekKey] = len(weekNumbersByKey) + 1
+
             pollSessions[pollKey] = PollSession(
                 pollKey=pollKey,
-                pollTitle=pollTitle,
-                weekNumber=sessionCounts[sessionName],
+                pollTitle=record.pollTitle,
+                sessionDateText=record.sessionDateText,
+                weekNumber=weekNumbersByKey[sessionWeekKey],
                 sessionName=sessionName,
             )
 
@@ -360,6 +416,24 @@ class AttendanceExporter:
             sourceHint=sourceText[:240],
         )
         return pollKey, pollTitle, pollDateText
+
+    def calculateSessionDateText(self, pollTitle: str, pollDateText: str) -> str:
+        sessionWeekday = self.extractSessionWeekday(pollTitle)
+        if not sessionWeekday or not pollDateText:
+            return ""
+
+        try:
+            pollDate = datetime.strptime(pollDateText, "%Y%m%d")
+        except ValueError:
+            return ""
+
+        targetWeekday = self.getWeekdayMap()[sessionWeekday]
+
+        daysForward = (targetWeekday - pollDate.weekday()) % 7
+        if daysForward == 0:
+            daysForward = 7
+
+        return (pollDate + timedelta(days=daysForward)).strftime("%Y%m%d")
 
     def normaliseDateText(self, dateText: str) -> str:
         text = " ".join(dateText.split()).strip().lower()
@@ -530,6 +604,9 @@ class AttendanceExporter:
                                 PollRecord(
                                     pollTitle=pollTitle,
                                     pollDateText=pollDateText,
+                                    sessionDateText=self.calculateSessionDateText(
+                                        pollTitle=pollTitle, pollDateText=pollDateText
+                                    ),
                                     option="Yes",
                                     voterName=voterName,
                                     sourceHint=sourceText[:240],
@@ -545,6 +622,10 @@ class AttendanceExporter:
                                     PollRecord(
                                         pollTitle=pollTitle,
                                         pollDateText=pollDateText,
+                                        sessionDateText=self.calculateSessionDateText(
+                                            pollTitle=pollTitle,
+                                            pollDateText=pollDateText,
+                                        ),
                                         option="No",
                                         voterName=voterName,
                                         sourceHint=sourceText[:240],
@@ -920,11 +1001,12 @@ class AttendanceExporter:
 
     def deduplicateRecords(self, records: list[PollRecord]) -> list[PollRecord]:
         output: list[PollRecord] = []
-        seen: set[tuple[str, str, str, str]] = set()
+        seen: set[tuple[str, str, str, str, str]] = set()
         for record in records:
             key = (
                 record.pollTitle,
                 record.pollDateText,
+                record.sessionDateText,
                 record.option,
                 record.voterName,
             )
