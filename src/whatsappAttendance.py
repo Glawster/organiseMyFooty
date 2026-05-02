@@ -574,6 +574,7 @@ class AttendanceExporter:
         selectors = (
             '[data-testid="poll-view-votes"]',
             'div[role="button"]:has-text("View votes")',
+            'span:has-text("View votes")',
             'text="View votes"',
         )
 
@@ -581,6 +582,7 @@ class AttendanceExporter:
             try:
                 locator = page.locator(selector)
                 count = locator.count()
+                self.logger.value(f"poll selector count {selector}", count)
             except Exception:
                 continue
 
