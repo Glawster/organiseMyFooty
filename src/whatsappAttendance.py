@@ -13,7 +13,7 @@ import time
 from attendanceConfig import RuntimeConfig, writeCsv
 from whatsappSelectors import DEFAULT_SELECTORS, WhatsAppSelectors
 
-from organiseMyProjects.logUtils import getLogger
+from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
 
 logger = getLogger()
 
@@ -252,9 +252,9 @@ class AttendanceExporter:
             outputRows.append(
                 {
                     "name": voterName,
-                    "yesCount": int(row["yesCount"]),
-                    "noCount": int(row["noCount"]),
-                    "totalVotes": int(row["totalVotes"]),
+                    "yesCount": int(row["yesCount"]),  # type: ignore
+                    "noCount": int(row["noCount"]),  # type: ignore
+                    "totalVotes": int(row["totalVotes"]),  # type: ignore
                     "pollsResponded": len(row["pollsResponded"]),  # type: ignore[arg-type]
                 }
             )
@@ -551,7 +551,7 @@ class AttendanceExporter:
         self.logger.info("scrolling chat history to load older polls")
         for _ in range(scrollPasses):
             page.mouse.wheel(0, -2000)
-            page.wait_for_timeout(500)
+            page.wait_for_timeout(800)
 
     def findPollCards(self, page) -> list:
         pollLocators: list = []
