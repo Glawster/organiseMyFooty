@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -92,7 +92,7 @@ class AttendanceExporter:
             )
 
         self.logger.action(
-            "write attendanceReport.csv rows: %s", max(0, len(reportRows) - 2)
+            "write attendanceReport.csv rows: %s", max(0, len(reportRows) - 3)
         )
         if not self.config.dryRun:
             self.writeAttendanceReportCsv(
@@ -129,6 +129,25 @@ class AttendanceExporter:
         with path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
             writer.writerows(rows)
+
+    def extractSessionWeekday(self, pollTitle: str) -> str:
+        match = re.match(
+            r"^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+            pollTitle.strip(),
+            re.IGNORECASE,
+        )
+        return match.group(1).lower() if match else ""
+
+    def getWeekdayMap(self) -> dict[str, int]:
+        return {
+            "monday": 0,
+            "tuesday": 1,
+            "wednesday": 2,
+            "thursday": 3,
+            "friday": 4,
+            "saturday": 5,
+            "sunday": 6,
+        }
 
     def getPollCachePath(self) -> Path:
         return self.config.outputDir / "pollCache.json"
@@ -257,7 +276,7 @@ class AttendanceExporter:
                 row["yesCount"] += 1  # type: ignore[operator]
             elif record.option.lower() == "no":
                 row["noCount"] += 1  # type: ignore[operator]
-            row["pollsResponded"].add(f"{record.pollTitle}|{record.pollDateText}")  # type: ignore[union-attr]
+            row["pollsResponded"].add(f"{record.pollTitle}|{record.sessionDateText or record.pollDateText}")  # type: ignore[union-attr]
 
         outputRows: list[dict] = []
         for voterName in sorted(summary, key=str.casefold):
