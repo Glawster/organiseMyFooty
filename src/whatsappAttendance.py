@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict, defaultdict
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 import csv
@@ -346,17 +346,57 @@ class AttendanceExporter:
     def buildPollKeyFromParts(
         self, pollTitle: str, pollDateText: str, sourceHint: str
     ) -> str:
-        return f"{pollTitle}|{pollDateText}|{sourceHint[:80]}"
+        if pollDateText:
+            return f"{pollTitle}|{pollDateText}"
+        return f"{pollTitle}|{sourceHint[:80]}"
 
     def buildPollKeyFromSourceText(self, sourceText: str) -> tuple[str, str, str]:
         pollTitle = self.extractPollTitle(sourceText=sourceText) or "unknown poll"
-        pollDateText = self.extractLikelyDateText(sourceText) or ""
+        rawDateText = self.extractLikelyDateText(sourceText) or ""
+        pollDateText = self.normaliseDateText(rawDateText)
         pollKey = self.buildPollKeyFromParts(
             pollTitle=pollTitle,
             pollDateText=pollDateText,
             sourceHint=sourceText[:240],
         )
         return pollKey, pollTitle, pollDateText
+
+    def normaliseDateText(self, dateText: str) -> str:
+        text = " ".join(dateText.split()).strip().lower()
+        if not text:
+            return ""
+
+        dateMatch = re.search(r"\b(\d{1,2}/\d{1,2}/\d{4})\b", text)
+        if dateMatch:
+            try:
+                dt = datetime.strptime(dateMatch.group(1), "%d/%m/%Y")
+                return dt.strftime("%Y%m%d")
+            except ValueError:
+                pass
+
+        today = datetime.now()
+        if text.startswith("today"):
+            return today.strftime("%Y%m%d")
+        if text.startswith("yesterday"):
+            return (today - timedelta(days=1)).strftime("%Y%m%d")
+
+        weekdays = {
+            "monday": 0,
+            "tuesday": 1,
+            "wednesday": 2,
+            "thursday": 3,
+            "friday": 4,
+            "saturday": 5,
+            "sunday": 6,
+        }
+        weekday = text.split(" at ", maxsplit=1)[0]
+        if weekday in weekdays:
+            daysBack = (today.weekday() - weekdays[weekday]) % 7
+            if daysBack == 0:
+                daysBack = 7
+            return (today - timedelta(days=daysBack)).strftime("%Y%m%d")
+
+        return ""
 
     def extractSessionName(self, pollTitle: str) -> str:
         title = " ".join(pollTitle.split()).strip()
@@ -381,20 +421,6 @@ class AttendanceExporter:
                 self.waitForWhatsAppReady(page)
                 self.openGroup(page, self.config.groupName)
                 self.scrollChatHistory(page)
-
-                bodyText = page.locator("body").inner_text(timeout=3000)
-
-                self.logger.value(
-                    "view votes text count", bodyText.lower().count("view votes")
-                )
-                self.logger.value(
-                    "poll details text count", bodyText.lower().count("poll details")
-                )
-                self.logger.value(
-                    "football factory text count",
-                    bodyText.lower().count("football factory"),
-                )
-                self.logger.value("body text sample", bodyText[-2000:])
 
                 pollLocators = self.findPollCards(page)
                 totalPolls = len(pollLocators)
@@ -471,7 +497,8 @@ class AttendanceExporter:
                             self.extractPollTitle(dialog, sourceText=sourceText)
                             or "unknown poll"
                         )
-                        pollDateText = self.extractLikelyDateText(sourceText) or ""
+                        rawDateText = self.extractLikelyDateText(sourceText) or ""
+                        pollDateText = self.normaliseDateText(rawDateText)
                         pollKey = self.buildPollKeyFromParts(
                             pollTitle=pollTitle,
                             pollDateText=pollDateText,
@@ -591,7 +618,8 @@ class AttendanceExporter:
                 sourceText = self.extractPollSourceText(item)
                 if self.selectors.viewVotesText.lower() not in sourceText.lower():
                     continue
-                key = self.extractMessageKey(item) or f"{selector}|{sourceText[:120]}"
+                key = f"{selector}|{index}|{sourceText[:120]}"
+                self.logger.value("poll candidate key", key[:160])
                 if key in seenKeys:
                     continue
                 seenKeys.add(key)
@@ -731,15 +759,19 @@ class AttendanceExporter:
 
         lines = [line.strip() for line in sourceText.splitlines() if line.strip()]
 
-        for line in lines:
-            lowered = line.lower()
-            if lowered in ignoredLines:
+        for index, line in enumerate(lines):
+            if line.lower() != "select one or more":
                 continue
-            if self.looksLikeVoteCount(line):
-                continue
-            if re.search(r"\b\d{1,2}:\d{2}\b", line):
-                continue
-            return line
+
+            for candidate in reversed(lines[:index]):
+                lowered = candidate.lower()
+                if lowered in ignoredLines:
+                    continue
+                if self.looksLikeVoteCount(candidate):
+                    continue
+                if re.search(r"\b\d{1,2}:\d{2}\b", candidate):
+                    continue
+                return candidate
 
         return "unknown poll"
 
