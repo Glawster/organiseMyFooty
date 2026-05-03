@@ -9,7 +9,7 @@ from attendanceConfig import RuntimeConfig, writeCsv
 from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
 from whatsapp.selectors import DEFAULT_SELECTORS, WhatsAppSelectors
 
-from whatsapp.browser import WhatsAppPollScraper
+from whatsapp.scraper import WhatsAppPollScraper
 from whatsapp.cache import PollCacheStore
 from whatsapp.parsing import PollTextParser
 from whatsapp.reports import AttendanceReportBuilder
