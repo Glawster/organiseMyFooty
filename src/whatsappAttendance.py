@@ -511,6 +511,7 @@ class AttendanceExporter:
         pollCount = 0
 
         with sync_playwright() as playwright:
+
             browserContext = playwright.chromium.launch_persistent_context(
                 user_data_dir=str(self.config.userDataDir),
                 headless=self.config.headless,
@@ -613,6 +614,10 @@ class AttendanceExporter:
                             pollDateText=pollDateText,
                             sourceHint=sourceText[:240],
                         )
+                        self.logger.value("source text sample", sourceText[:500])
+                        self.logger.value("raw date text", rawDateText)
+                        self.logger.value("poll date text", pollDateText)
+
                         pollRecords: list[PollRecord] = []
 
                         yesVoters = self.extractOptionVotersFromText(
@@ -735,7 +740,7 @@ class AttendanceExporter:
                 if self.selectors.viewVotesText.lower() not in sourceText.lower():
                     continue
                 key = f"{selector}|{index}|{sourceText[:120]}"
-                self.logger.value("poll candidate key", key[:160])
+                # self.logger.value("poll candidate key", key[:160])
                 if key in seenKeys:
                     continue
                 seenKeys.add(key)
@@ -814,7 +819,7 @@ class AttendanceExporter:
             panel.wait_for(state="visible", timeout=3000)
 
             text = panel.inner_text(timeout=3000)
-            self.logger.value("poll panel sample", text[:300])
+            # self.logger.value("poll panel sample", text[:300])
             return panel, text
 
         except Exception:
@@ -836,11 +841,11 @@ class AttendanceExporter:
             except Exception:
                 continue
 
-        try:
-            bodyText = page.locator("body").inner_text(timeout=2000)
-            self.logger.value("body text sample", bodyText[-500:])
-        except Exception:
-            pass
+        # try:
+        #     bodyText = page.locator("body").inner_text(timeout=2000)
+        #     self.logger.value("body text sample", bodyText[-500:])
+        # except Exception:
+        #     pass
 
     def expandAllVoters(self, panel) -> None:
         previousText = ""
@@ -901,7 +906,11 @@ class AttendanceExporter:
         return "unknown poll"
 
     def extractLikelyDateText(self, sourceText: str) -> str:
-        match = re.search(self.selectors.likelyMessageTimePattern, sourceText)
+        match = re.search(
+            r"\b(?:today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}/\d{1,2}/\d{4})\b",
+            sourceText,
+            re.IGNORECASE,
+        )
         return match.group(0) if match else ""
 
     def extractOptionVoters(self, dialog, optionTexts: Iterable[str]) -> list[str]:

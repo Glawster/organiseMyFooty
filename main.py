@@ -13,7 +13,7 @@ from pathlib import Path
 # -------------------------------------------------------------------
 # logging setup (must be top-level)
 # -------------------------------------------------------------------
-from organiseMyProjects.logUtils import getLogger, setApplication
+from organiseMyProjects.logUtils import getLogger, setApplication  # type: ignore
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
