@@ -13,13 +13,14 @@ import time
 from attendanceConfig import RuntimeConfig, writeCsv
 from whatsappSelectors import DEFAULT_SELECTORS, WhatsAppSelectors
 
-from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
+from organiseMyProjects.logUtils import getLogger, drawBox  # type: ignore[import]
 
 logger = getLogger()
 
 POLL_CACHE_VERSION = 1
 RECENT_POLLS_TO_RECHECK = 2
 IGNORE_POLL_CACHE = True  # temporary while stabilising poll discovery
+MAX_TRAVERSAL_DEPTH = 10  # max DOM levels to traverse when searching for poll date text
 
 
 @dataclass(frozen=True)
@@ -452,7 +453,8 @@ class AttendanceExporter:
         if daysForward == 0:
             daysForward = 7
 
-        return (pollDate + timedelta(days=daysForward)).strftime("%Y%m%d")
+        sessionDateText = (pollDate + timedelta(days=daysForward)).strftime("%Y%m%d")
+        return sessionDateText
 
     def normaliseDateText(self, dateText: str) -> str:
         text = " ".join(dateText.split()).strip().lower()
@@ -503,6 +505,51 @@ class AttendanceExporter:
                 re.IGNORECASE,
             )
         )
+
+    def extractPollDateText(self, locator, sourceText: str) -> str:
+        # First use explicit dates if the poll card happens to contain one.
+        textDate = self.extractLikelyDateText(sourceText)
+        if textDate:
+            return textDate
+
+        script = r"""
+        (node) => {
+            const isDateText = (value) => {
+                const text = (value || "").trim();
+                return /^(today|yesterday)$/i.test(text)
+                    || /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(text);
+            };
+
+            const nodeRect = node.getBoundingClientRect();
+            const candidates = Array.from(document.querySelectorAll("span, div"))
+                .map((el) => {
+                    const text = (el.innerText || el.textContent || "").trim();
+                    if (!isDateText(text)) {
+                        return null;
+                    }
+
+                    const rect = el.getBoundingClientRect();
+                    return {
+                        text,
+                        top: rect.top,
+                        bottom: rect.bottom,
+                        left: rect.left,
+                        right: rect.right,
+                    };
+                })
+                .filter(Boolean)
+                .filter((item) => item.bottom <= nodeRect.top + 5)
+                .sort((a, b) => b.bottom - a.bottom);
+
+            return candidates.length ? candidates[0].text : "";
+        }
+        """
+
+        try:
+            return str(locator.evaluate(script, timeout=1000) or "")
+        except Exception as exc:
+            self.logger.warning("unable to derive poll date: %s", exc)
+            return ""
 
     def collectPollAttendance(self) -> list[PollRecord]:
         from playwright.sync_api import sync_playwright
@@ -607,16 +654,22 @@ class AttendanceExporter:
                             )
                             continue
 
-                        rawDateText = self.extractLikelyDateText(sourceText) or ""
+                        rawDateText = self.extractPollDateText(locator, sourceText)
                         pollDateText = self.normaliseDateText(rawDateText)
+                        sessionDateText = self.calculateSessionDateText(
+                            pollTitle=pollTitle,
+                            pollDateText=pollDateText,
+                        )
+
                         pollKey = self.buildPollKeyFromParts(
                             pollTitle=pollTitle,
                             pollDateText=pollDateText,
                             sourceHint=sourceText[:240],
                         )
-                        self.logger.value("source text sample", sourceText[:500])
+                        drawBox(sourceText[:500])
                         self.logger.value("raw date text", rawDateText)
                         self.logger.value("poll date text", pollDateText)
+                        self.logger.value("session date text", sessionDateText)
 
                         pollRecords: list[PollRecord] = []
 
@@ -628,9 +681,7 @@ class AttendanceExporter:
                                 PollRecord(
                                     pollTitle=pollTitle,
                                     pollDateText=pollDateText,
-                                    sessionDateText=self.calculateSessionDateText(
-                                        pollTitle=pollTitle, pollDateText=pollDateText
-                                    ),
+                                    sessionDateText=sessionDateText,
                                     option="Yes",
                                     voterName=voterName,
                                     sourceHint=sourceText[:240],
@@ -646,10 +697,7 @@ class AttendanceExporter:
                                     PollRecord(
                                         pollTitle=pollTitle,
                                         pollDateText=pollDateText,
-                                        sessionDateText=self.calculateSessionDateText(
-                                            pollTitle=pollTitle,
-                                            pollDateText=pollDateText,
-                                        ),
+                                        sessionDateText=sessionDateText,
                                         option="No",
                                         voterName=voterName,
                                         sourceHint=sourceText[:240],
@@ -730,7 +778,7 @@ class AttendanceExporter:
             try:
                 locator = page.locator(selector)
                 count = locator.count()
-                self.logger.value(f"poll selector count {selector}", count)
+                # self.logger.value(f"poll selector count {selector}", count)
             except Exception:
                 continue
 
@@ -907,7 +955,7 @@ class AttendanceExporter:
 
     def extractLikelyDateText(self, sourceText: str) -> str:
         match = re.search(
-            r"\b(?:today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}/\d{1,2}/\d{4})\b",
+            r"\b(?:today|yesterday|\d{1,2}/\d{1,2}/\d{4})\b",
             sourceText,
             re.IGNORECASE,
         )
