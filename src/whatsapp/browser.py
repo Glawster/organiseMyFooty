@@ -5,12 +5,12 @@ import time
 
 from attendanceConfig import RuntimeConfig
 from organiseMyProjects.logUtils import drawBox, getLogger  # type: ignore[import]
-from whatsappSelectors import WhatsAppSelectors
+from whatsapp.selectors import WhatsAppSelectors
 
-from whatsappCache import PollCacheStore
-from whatsappModels import PollRecord
-from whatsappParsing import PollTextParser
-from whatsappRecords import deduplicateRecords
+from whatsapp.cache import PollCacheStore
+from whatsapp.models import PollRecord
+from whatsapp.parsing import PollTextParser
+from whatsapp.records import deduplicateRecords
 
 logger = getLogger()
 

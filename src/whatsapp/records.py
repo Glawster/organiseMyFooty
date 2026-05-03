@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from whatsappModels import PollRecord
+from whatsapp.models import PollRecord
 
 
 def deduplicateRecords(records: list[PollRecord]) -> list[PollRecord]:

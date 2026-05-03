@@ -5,7 +5,7 @@ from typing import Iterable
 import re
 
 from attendanceConfig import RuntimeConfig
-from whatsappSelectors import WhatsAppSelectors
+from whatsapp.selectors import WhatsAppSelectors
 
 
 WEEKDAY_MAP = {

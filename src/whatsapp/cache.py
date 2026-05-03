@@ -9,14 +9,14 @@ import json
 from attendanceConfig import RuntimeConfig
 from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
 
-from whatsappConstants import (
+from whatsapp.constants import (
     IGNORE_POLL_CACHE,
     POLL_CACHE_VERSION,
     RECENT_POLLS_TO_RECHECK,
 )
-from whatsappModels import PollRecord
-from whatsappParsing import PollTextParser
-from whatsappRecords import deduplicateRecords
+from whatsapp.models import PollRecord
+from whatsapp.parsing import PollTextParser
+from whatsapp.records import deduplicateRecords
 
 logger = getLogger()
 

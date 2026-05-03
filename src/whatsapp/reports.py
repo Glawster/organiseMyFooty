@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections import OrderedDict
 from datetime import datetime, timedelta
 
-from whatsappModels import PollRecord, PollSession
-from whatsappParsing import PollTextParser
+from whatsapp.models import PollRecord, PollSession
+from whatsapp.parsing import PollTextParser
 
 
 class AttendanceReportBuilder:
