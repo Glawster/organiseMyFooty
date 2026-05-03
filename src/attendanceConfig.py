@@ -33,6 +33,7 @@ class RuntimeConfig:
     includeNoVotes: bool
     resume: bool
     pollTitleFilter: Optional[str]
+    myName: str = "Andy Wilson"
 
 
 def resolveMonthWindow(monthText: Optional[str] = None) -> MonthWindow:
