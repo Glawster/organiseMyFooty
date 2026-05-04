@@ -7,7 +7,6 @@ import re
 from attendanceConfig import RuntimeConfig
 from whatsapp.selectors import WhatsAppSelectors
 
-
 WEEKDAY_MAP = {
     "monday": 0,
     "tuesday": 1,
@@ -223,7 +222,7 @@ class PollTextParser:
     # ## text matching utilities
     def extractLikelyDateText(self, sourceText: str) -> str:
         match = re.search(
-            r"\b(?:today|yesterday|\d{1,2}/\d{1,2}/\d{4})\b",
+            r"\b(?:today|yesterday|\d{1,2}/\d{1,2}/\d{4}|\d{1,2}:\d{2})\b",
             sourceText,
             re.IGNORECASE,
         )

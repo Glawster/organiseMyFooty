@@ -53,9 +53,9 @@ def _fake_draw_box(*_args, **_kwargs):
 
 _stubbed_organiseMyProjects = types.ModuleType("organiseMyProjects")
 _stubbed_logUtils = types.ModuleType("organiseMyProjects.logUtils")
-_stubbed_logUtils.getLogger = _fake_get_logger
-_stubbed_logUtils.drawBox = _fake_draw_box
-_stubbed_organiseMyProjects.logUtils = _stubbed_logUtils
+setattr(_stubbed_logUtils, "getLogger", _fake_get_logger)
+setattr(_stubbed_logUtils, "drawBox", _fake_draw_box)
+setattr(_stubbed_organiseMyProjects, "logUtils", _stubbed_logUtils)
 sys.modules.setdefault("organiseMyProjects", _stubbed_organiseMyProjects)
 sys.modules.setdefault("organiseMyProjects.logUtils", _stubbed_logUtils)
 

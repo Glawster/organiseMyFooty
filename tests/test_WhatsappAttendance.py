@@ -15,7 +15,6 @@ from whatsapp.pollDiscovery import PollDiscovery
 from whatsapp.pollDialog import PollDialog
 from whatsapp.selectors import DEFAULT_SELECTORS
 
-
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -145,9 +144,13 @@ def test_find_poll_cards():
     parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
     discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
 
-    page = StubPage({
-        'div:has-text("View votes")': StubCollection(["Poll 1 View votes"]),
-    })
+    page = StubPage(
+        {
+            'div[role="button"]:has-text("View votes")': StubCollection(
+                ["Poll 1 View votes"]
+            ),
+        }
+    )
 
     results = discovery.findPollCards(page)
     assert len(results) == 1
