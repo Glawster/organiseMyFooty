@@ -1,7 +1,4 @@
-<!-- synced from Glawster/organiseMyProjects -- do not edit directly -->
 # GitHub Copilot Instructions -- Master Development Guidelines (v2)
-
-------------------------------------------------------------------------
 
 # Table of Contents
 
@@ -19,8 +16,6 @@
 12. [Refactoring Guidelines](#refactoring-guidelines)\
 13. [Common Principles to Always Follow](#common-principles-to-always-follow)
 
-------------------------------------------------------------------------
-
 # Overview
 
 These are master development guidelines for all projects.
@@ -30,8 +25,7 @@ Project-specific details belong in:
 .github/additional-copilot-instructions.md
 
 This document defines universal rules.
-
-------------------------------------------------------------------------
+If any other repository guidance contradicts this file, this file takes precedence and the conflicting guidance should be removed or aligned.
 
 # Architecture Principles
 
@@ -45,8 +39,6 @@ This document defines universal rules.
 8.  Move files instead of deleting where possible\
 9.  Prefer explicit over implicit behavior\
 10. Validate all paths before use
-
-------------------------------------------------------------------------
 
 # Development Standards
 
@@ -64,7 +56,50 @@ This document defines universal rules.
 -   Utilities isolated in dedicated modules\
 -   Tests mirror source structure
 
-------------------------------------------------------------------------
+## Code Organisation & Function Naming Pattern
+
+- Group functions by domain or purpose.
+- Use `##` section headers with short lowercase names.
+- Function names should use the `domainAction` pattern.
+    - domain first, then action. Use camelCase.
+    - examples:
+        - `configLoad`
+        - `configSave`
+        - `messageExtract`
+        - `messageParse`
+        - `whatsappWaitForReady`
+    - avoid reversing the pattern (e.g. `loadConfig`, `extractMessage`).
+- Keep functions alphabetically ordered within each section unless readability will be reduced or precedence order is needed.
+- Keep public workflow near the top.
+- Keep low-level utilities near the bottom.
+- Private helpers must start with `_`.
+
+### Example
+
+class Example:
+
+    ## config
+
+    def configLoad(self):
+        pass
+
+    def configSave(self):
+        pass
+
+
+    ## message
+
+    def messageExtract(self):
+        pass
+
+    def messageParse(self):
+        pass
+
+
+    ## utilities
+
+    def _parseDate(self):
+        pass
 
 # Project Structure Standard
 
@@ -104,8 +139,6 @@ Rules:
 -   `ui/` is optional and should contain UI orchestration/assets where useful\
 -   Core/business logic must remain testable without the UI
 
-------------------------------------------------------------------------
-
 # CLI Design Standards
 
 All CLI tools must:
@@ -139,8 +172,6 @@ Command behaviour:
 
 Never expose `--dry-run` as the CLI flag. Use `dryRun` only as the internal boolean.
 
-------------------------------------------------------------------------
-
 # Environment & Dependency Policy
 
 -   Target Python 3.10+\
@@ -148,8 +179,6 @@ Never expose `--dry-run` as the CLI flag. Use `dryRun` only as the internal bool
 -   Do not auto-install dependencies at runtime\
 -   Fail fast if external tools are missing\
 -   Validate system requirements explicitly
-
-------------------------------------------------------------------------
 
 # Patterns
 
@@ -279,16 +308,6 @@ logger.action("moving file: src → dest") # → ...[] moving file: src → dest
 ### The `action()` / dry-run guard pattern
 
 ``` python
-Avoid:
-
-``` python
-logger.info("group: %s", config.groupName)
-logger.doing(f"group...{config.groupName}")
-```
-
-2. Use `logger.info()` for multiple values or narrative messages.
-
-``` python
 logger.info("opening poll %s/%s: %s", index, totalPolls, pollTitle)
 ```
 
@@ -364,8 +383,6 @@ from organiseMyProjects.logUtils import drawBox
 drawBox("Sync complete\n3 updated, 0 failed", logger=logger)
 ```
 
-------------------------------------------------------------------------
-
 ### Bash Logging (logUtils.sh)
 
 Bash scripts must source `logUtils.sh` from the `organiseMyProjects` package.
@@ -409,8 +426,6 @@ if [[ -z "${dryRun:-}" ]]; then
 fi
 ```
 
-------------------------------------------------------------------------
-
 ## Dry-Run Pattern
 
 Use `--confirm` as the CLI flag. Never expose `--dry-run` as the user-facing flag.
@@ -437,8 +452,6 @@ if not dryRun:
     shutil.move(src, dest)
 ```
 
-------------------------------------------------------------------------
-
 ## Recovery Pipeline Pattern
 
 -   Never destroy original structure\
@@ -447,15 +460,11 @@ if not dryRun:
 -   Support --confirm\
 -   Always validate paths first
 
-------------------------------------------------------------------------
-
 ## Stop File Pattern
 
 -   Check for stop file periodically\
 -   Exit gracefully if detected\
 -   Log cancellation event
-
-------------------------------------------------------------------------
 
 # Error Handling & Logging
 
@@ -464,16 +473,12 @@ if not dryRun:
 -   Always log errors with context\
 -   Never swallow exceptions silently
 
-------------------------------------------------------------------------
-
 # Security Standards
 
 -   Never hardcode credentials\
 -   Never log sensitive data\
 -   Validate and sanitize file paths\
 -   Respect user permissions
-
-------------------------------------------------------------------------
 
 # Testing Standards
 
@@ -482,16 +487,12 @@ if not dryRun:
 -   Use Arrange--Act--Assert\
 -   Use tmp_path for file tests
 
-------------------------------------------------------------------------
-
 # Performance Guidelines
 
 -   Profile before optimizing\
 -   Use lazy loading for large sets\
 -   Cache expensive computations\
 -   Batch filesystem operations
-
-------------------------------------------------------------------------
 
 # Refactoring Guidelines
 
@@ -501,8 +502,6 @@ Refactor when:
 -   Class \> 300 lines\
 -   Nesting \> 3 levels\
 -   Repeated logic appears twice
-
-------------------------------------------------------------------------
 
 # Common Principles to Always Follow
 
@@ -516,7 +515,5 @@ Refactor when:
 8.  Small, focused functions\
 9.  Test before refactor\
 10. Consistency across frameworks
-
-------------------------------------------------------------------------
 
 End of Master Development Guidelines
