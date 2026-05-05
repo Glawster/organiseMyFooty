@@ -39,7 +39,10 @@ class PollTextParser:
         if daysForward == 0:
             daysForward = 7
 
-        return (pollDate + timedelta(days=daysForward)).strftime("%Y%m%d")
+        sessionDate = pollDate + timedelta(days=daysForward)
+        timeText, _venueText = self.extractSessionParts(pollTitle)
+
+        return f"{sessionDate.strftime('%Y%m%d')} {timeText}"
 
     def normaliseDateText(self, dateText: str) -> str:
         text = " ".join(dateText.split()).strip().lower()
@@ -89,9 +92,37 @@ class PollTextParser:
         return pollKey, pollTitle, pollDateText
 
     # ## title utilities
+    def extractSessionParts(self, pollTitle: str) -> tuple[str, str]:
+        """
+        Returns (timeText, venueText)
+        Example: "Sunday 7pm LLC" -> ("19:00", "LLC")
+        """
+        match = re.match(
+            r"^(?P<day>\w+)\s+(?P<hour>\d{1,2})(?::(?P<min>\d{2}))?\s*(?P<ampm>am|pm)\s*(?P<venue>.*)$",
+            pollTitle.strip(),
+            re.IGNORECASE,
+        )
+
+        if not match:
+            return "00:00", pollTitle.strip()
+
+        hour = int(match.group("hour"))
+        minute = int(match.group("min") or "0")
+        ampm = match.group("ampm").lower()
+
+        if ampm == "pm" and hour != 12:
+            hour += 12
+        elif ampm == "am" and hour == 12:
+            hour = 0
+
+        timeText = f"{hour:02d}:{minute:02d}"
+        venueText = match.group("venue").strip()
+
+        return timeText, venueText
+
     def extractSessionName(self, pollTitle: str) -> str:
-        title = " ".join(pollTitle.split()).strip()
-        return re.sub(r"\s+", " ", title) or "unknown session"
+        timeText, venueText = self.extractSessionParts(pollTitle)
+        return f"{timeText} {venueText}".strip()
 
     def extractSessionWeekday(self, pollTitle: str) -> str:
         match = re.match(

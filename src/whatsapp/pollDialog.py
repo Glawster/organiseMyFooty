@@ -18,7 +18,7 @@ class PollDialog:
     def openPollVotes(self, locator) -> bool:
         disabled = locator.get_attribute("aria-disabled", timeout=1000)
         if disabled == "true":
-            self.logger.info("...poll skipped disabled")
+            self.logger.info("poll skipped disabled")
             return False
 
         locator.scroll_into_view_if_needed(timeout=self.config.timeoutMs)

@@ -111,7 +111,7 @@ class WhatsAppPollScraper:
 
         if cachedRecords and not shouldRecheck:
             self.logger.info(
-                "...using cached poll %s/%s: %s", index, totalPolls, pollTitle
+                "using cached poll %s/%s: %s", index, totalPolls, pollTitle
             )
             return 1
 
@@ -167,7 +167,7 @@ class WhatsAppPollScraper:
         if pollCount < self.config.limitPolls:
             return False
 
-        self.logger.info("...poll limit reached: %s", self.config.limitPolls)
+        self.logger.info("poll limit reached: %s", self.config.limitPolls)
         return True
 
     def shouldSkipForTitleFilter(self, sourceText: str) -> bool:
@@ -177,7 +177,7 @@ class WhatsAppPollScraper:
         shouldSkip = self.config.pollTitleFilter.lower() not in sourceText.lower()
         if shouldSkip:
             self.logger.info(
-                "...skipping poll title filter: %s",
+                "skipping poll title filter: %s",
                 self.config.pollTitleFilter,
             )
         return shouldSkip
@@ -194,11 +194,12 @@ class WhatsAppPollScraper:
     ) -> None:
         if cachedRecords and shouldRecheck:
             self.logger.info(
-                "...rechecking recent poll %s/%s: %s",
+                "rechecking recent poll %s/%s: %s",
                 index,
                 totalPolls,
                 pollTitle,
             )
             return
 
-        self.logger.info("...opening poll %s/%s: %s", index, totalPolls, pollTitle)
+        self.logger.info("poll %s/%s: %s", index, totalPolls, pollTitle)
+        self.logger.doing("opening poll")

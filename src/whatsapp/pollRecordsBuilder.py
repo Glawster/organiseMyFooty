@@ -38,7 +38,7 @@ class PollRecordsBuilder:
             or "unknown poll"
         )
         if not self.parser.isValidSessionPoll(pollTitle):
-            self.logger.info("...skipping invalid session title: %s", pollTitle)
+            self.logger.info("skipping invalid session title: %s", pollTitle)
             return []
 
         rawDateText = self.discovery.extractPollDateText(locator, sourceText)
@@ -48,7 +48,7 @@ class PollRecordsBuilder:
             pollDateText=pollDateText,
         )
 
-        drawBox(sourceText[:500])
+        drawBox(sourceText[:500], width=40)
         self.logger.value("raw date text", rawDateText)
         self.logger.value("poll date text", pollDateText)
         self.logger.value("session date text", sessionDateText)

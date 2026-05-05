@@ -17,7 +17,7 @@ class WhatsAppSelectors:
 
     # Broad selectors — any one visible means WhatsApp Web has fully loaded.
     # Used only by waitForWhatsAppReady; add new entries here if the UI changes.
-    readyIndicatorCandidates: tuple[str, ...] = (
+    readyIndicatorCandidates: tuple[str,] = (
         '[aria-label="Search or start a new chat"]',
         '[placeholder="Search or start a new chat"]',
         '[data-testid="chat-list"]',
@@ -30,7 +30,7 @@ class WhatsAppSelectors:
 
     # Interactive search-box selectors — must be clickable/typeable.
     # Used by openGroup to find and focus the search input.
-    searchBoxCandidates: tuple[str, ...] = (
+    searchBoxCandidates: tuple[str,] = (
         '[aria-label="Search or start a new chat"]',
         '[placeholder="Search or start a new chat"]',
         '[data-testid="search-input"]',
@@ -41,12 +41,12 @@ class WhatsAppSelectors:
         'div[role="textbox"]',
     )
 
-    chatHeaderCandidates: tuple[str, ...] = (
+    chatHeaderCandidates: tuple[str,] = (
         "header [title]",
         'header span[dir="auto"]',
     )
 
-    pollCardCandidates: tuple[str, ...] = (
+    pollCardCandidates: tuple[str,] = (
         '[data-testid="poll-view-votes"]',
         'div[role="button"]:has-text("View votes")',
         'div:has-text("View votes")',
@@ -54,7 +54,7 @@ class WhatsAppSelectors:
 
     viewVotesText: str = "View votes"
 
-    dialogCandidates: tuple[str, ...] = (
+    dialogCandidates: tuple[str,] = (
         # Semantic dialog roles — catches some WhatsApp Web builds.
         'div[role="dialog"]',
         'div[aria-modal="true"]',
@@ -77,18 +77,18 @@ class WhatsAppSelectors:
         'div:has([aria-label="Close"]):has-text("Yes")',
     )
 
-    closeDialogCandidates: tuple[str, ...] = (
+    closeDialogCandidates: tuple[str,] = (
         'button[aria-label="Close"]',
         '[role="button"][aria-label="Close"]',
     )
 
-    backCandidates: tuple[str, ...] = (
+    backCandidates: tuple[str,] = (
         'button[aria-label="Back"]',
         '[role="button"][aria-label="Back"]',
     )
 
-    yesOptionTexts: tuple[str, ...] = ("Yes",)
-    noOptionTexts: tuple[str, ...] = ("No",)
+    yesOptionTexts: tuple[str,] = ("Yes",)
+    noOptionTexts: tuple[str,] = ("No",)
 
     likelyMessageTimePattern: str = r"\b\d{1,2}:\d{2}\b"
 

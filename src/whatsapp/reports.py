@@ -60,7 +60,12 @@ class AttendanceReportBuilder:
             sessionsByWeek.setdefault(session.weekNumber, []).append(session)
 
         for week in sessionsByWeek.values():
-            week.sort(key=lambda s: s.sessionDateText)
+            week.sort(
+                key=lambda s: datetime.strptime(
+                    s.sessionDateText or "99991231 00:00",
+                    "%Y%m%d %H:%M",
+                )
+            )
 
         dateHeader = [""]
         weekHeader = [""]
@@ -69,7 +74,7 @@ class AttendanceReportBuilder:
 
         for weekNumber in range(1, maxWeek + 1):
             for i, session in enumerate(sessionsByWeek.get(weekNumber, [])):
-                dateHeader.append(session.sessionDateText)
+                dateHeader.append(self.formatSessionDateText(session.sessionDateText))
                 weekHeader.append(f"week {weekNumber}" if i == 0 else "")
                 sessionHeader.append(session.sessionName)
                 columns.append(session)
@@ -77,7 +82,7 @@ class AttendanceReportBuilder:
         voterNames = sorted({r.voterName for r in records}, key=str.casefold)
         attendance = self.buildAttendanceLookup(records, pollSessions)
 
-        rows = [dateHeader, weekHeader, sessionHeader]
+        rows = [weekHeader, dateHeader, sessionHeader]
         for voter in voterNames:
             row = [voter]
             for session in columns:
@@ -153,7 +158,7 @@ class AttendanceReportBuilder:
         if not sessionDateText:
             return "unknown"
         try:
-            sessionDate = datetime.strptime(sessionDateText, "%Y%m%d")
+            sessionDate = datetime.strptime(sessionDateText[:8], "%Y%m%d")
         except ValueError:
             return "unknown"
 
@@ -167,3 +172,15 @@ class AttendanceReportBuilder:
         for pollSession in pollSessions.values():
             sessions.setdefault(pollSession.sessionName, None)
         return list(sessions.keys())
+
+    def formatSessionDateText(self, sessionDateText: str) -> str:
+        if not sessionDateText:
+            return ""
+
+        try:
+            return datetime.strptime(
+                sessionDateText,
+                "%Y%m%d %H:%M",
+            ).strftime("%d/%m/%Y %H:%M")
+        except ValueError:
+            return sessionDateText

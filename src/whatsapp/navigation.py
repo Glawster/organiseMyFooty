@@ -19,7 +19,7 @@ class WhatsAppNavigation:
 
     def waitForWhatsAppReady(self, page) -> None:
         page.wait_for_load_state("domcontentloaded")
-        self.logger.info("...waiting for whatsapp web")
+        self.logger.doing("waiting for whatsapp web")
         deadline = time.time() + max(60, self.config.timeoutMs / 1000)
 
         while time.time() < deadline:
@@ -27,7 +27,7 @@ class WhatsAppNavigation:
                 try:
                     locator = page.locator(selector).first
                     if locator.is_visible(timeout=1000):
-                        self.logger.info("...whatsapp ready selector: %s", selector)
+                        self.logger.info("whatsapp ready selector: %s", selector)
                         return
                 except Exception:
                     continue
@@ -38,7 +38,7 @@ class WhatsAppNavigation:
         )
 
     def openGroup(self, page, groupName: str) -> None:
-        self.logger.info("...opening group: %s", groupName)
+        self.logger.info("opening group: %s", groupName)
 
         lastError: Exception | None = None
         for selector in self.selectors.iterSearchSelectors():
@@ -56,10 +56,10 @@ class WhatsAppNavigation:
 
         candidate = page.get_by_text(groupName, exact=True).first
         candidate.click(timeout=self.config.timeoutMs)
-        self.logger.info("group opened...")
+        self.logger.info("group opened")
 
     def scrollChatHistory(self, page, scrollPasses: int = 12) -> None:
-        self.logger.info("...scrolling chat history")
+        self.logger.doing("scrolling chat history")
         for _ in range(scrollPasses):
             page.mouse.wheel(0, -2000)
             page.wait_for_timeout(800)
