@@ -25,8 +25,8 @@ tests/
 ├── conftest.py              # adds src/ to sys.path
 ├── guiNamingLinter.py       # GUI naming convention linter
 ├── runLinter.py             # CLI entry for the linter
-├── testAttendanceConfig.py  # unit tests for attendanceConfig
-└── testWhatsappAttendance.py # unit tests for non-browser helpers
+├── test_AttendanceConfig.py  # unit tests for attendanceConfig
+└── test_WhatsappAttendance.py # unit tests for non-browser helpers
 ```
 
 ---
@@ -46,7 +46,8 @@ python exportAttendance.py --group "My Footy Group" --month 2026-03 --dry-run
 
 ```bash
 pytest            # run all tests
-pytest tests/testAttendanceConfig.py -v
+pytest tests/test_AttendanceConfig.py -v
+pytest tests/test_WhatsappAttendance.py -v
 ```
 
 Tests for browser automation are **not** included — Playwright requires a live

@@ -155,6 +155,7 @@ All CLI tools must:
 
 ``` python
 parser.add_argument(
+    "-y",
     "--confirm",
     dest="confirm",
     action="store_true",
@@ -247,6 +248,7 @@ from ui.mainMenu import mainMenu
 def buildParser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "-y",
         "--confirm",
         dest="confirm",
         action="store_true",
@@ -272,7 +274,7 @@ def main() -> None:
 Use this in helper modules (do not import or redefine `thisApplication` outside `main.py`):
 
 ``` python
-from organiseMyProjects.logUtils import getLogger
+from organiseMyProjects.logUtils import getLogger, setApplication
 
 logger = getLogger()
 ```
