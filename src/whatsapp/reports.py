@@ -67,22 +67,31 @@ class AttendanceReportBuilder:
                 )
             )
 
-        dateHeader = [""]
-        weekHeader = [""]
+        weekHeader = ["week"]
+        dateHeader = ["date"]
+        venueHeader = ["venue"]
+        dayHeader = ["day"]
         sessionHeader = ["name"]
         columns: list[PollSession] = []
 
         for weekNumber in range(1, maxWeek + 1):
             for i, session in enumerate(sessionsByWeek.get(weekNumber, [])):
-                dateHeader.append(self.formatSessionDateText(session.sessionDateText))
                 weekHeader.append(f"week {weekNumber}" if i == 0 else "")
+                dateHeader.append(self.formatSessionDateText(session.sessionDateText))
+                venueHeader.append(session.venueName)
+                dayHeader.append(
+                    datetime.strptime(
+                        session.sessionDateText,
+                        "%Y%m%d %H:%M",
+                    ).strftime("%A")
+                )
                 sessionHeader.append(session.sessionName)
                 columns.append(session)
 
         voterNames = sorted({r.voterName for r in records}, key=str.casefold)
         attendance = self.buildAttendanceLookup(records, pollSessions)
 
-        rows = [weekHeader, dateHeader, sessionHeader]
+        rows = [weekHeader, dateHeader, venueHeader, dayHeader, sessionHeader]
         for voter in voterNames:
             row = [voter]
             for session in columns:
@@ -138,6 +147,7 @@ class AttendanceReportBuilder:
         pollSessions: OrderedDict[str, PollSession] = OrderedDict()
 
         for pollKey, record in sortedRows:
+            _timeText, venueName = self.parser.extractSessionParts(record.pollTitle)
             sessionName = self.parser.extractSessionName(record.pollTitle)
             sessionWeekKey = self.buildSessionWeekKey(record.sessionDateText)
 
@@ -150,6 +160,7 @@ class AttendanceReportBuilder:
                 sessionDateText=record.sessionDateText,
                 weekNumber=weekNumbersByKey[sessionWeekKey],
                 sessionName=sessionName,
+                venueName=venueName,
             )
 
         return pollSessions
@@ -181,6 +192,6 @@ class AttendanceReportBuilder:
             return datetime.strptime(
                 sessionDateText,
                 "%Y%m%d %H:%M",
-            ).strftime("%d/%m/%Y %H:%M")
+            ).strftime("%d/%m/%y")
         except ValueError:
             return sessionDateText

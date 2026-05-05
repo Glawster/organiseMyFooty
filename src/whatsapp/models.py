@@ -20,3 +20,4 @@ class PollSession:
     sessionDateText: str
     weekNumber: int
     sessionName: str
+    venueName: str

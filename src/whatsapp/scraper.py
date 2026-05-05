@@ -66,6 +66,7 @@ class WhatsAppPollScraper:
                 self.navigation.waitForWhatsAppReady(page)
                 self.navigation.openGroup(page, self.config.groupName)
                 self.navigation.scrollChatHistory(page)
+                self.discovery.logVisiblePollText(page)
 
                 pollLocators = self.discovery.findPollCards(page)
                 totalPolls = len(pollLocators)

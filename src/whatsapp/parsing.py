@@ -98,7 +98,7 @@ class PollTextParser:
         Example: "Sunday 7pm LLC" -> ("19:00", "LLC")
         """
         match = re.match(
-            r"^(?P<day>\w+)\s+(?P<hour>\d{1,2})(?::(?P<min>\d{2}))?\s*(?P<ampm>am|pm)\s*(?P<venue>.*)$",
+            r"^(?P<day>\w+)\s+(?P<hour>\d{1,2})(?:[:\.](?P<min>\d{2}))?\s*(?P<ampm>am|pm)\s*(?P<venue>.*)$",
             pollTitle.strip(),
             re.IGNORECASE,
         )
@@ -122,7 +122,7 @@ class PollTextParser:
 
     def extractSessionName(self, pollTitle: str) -> str:
         timeText, venueText = self.extractSessionParts(pollTitle)
-        return f"{timeText} {venueText}".strip()
+        return timeText
 
     def extractSessionWeekday(self, pollTitle: str) -> str:
         match = re.match(
@@ -253,7 +253,7 @@ class PollTextParser:
     # ## text matching utilities
     def extractLikelyDateText(self, sourceText: str) -> str:
         match = re.search(
-            r"\b(?:today|yesterday|\d{1,2}/\d{1,2}/\d{4}|\d{1,2}:\d{2})\b",
+            r"\b(?:today|yesterday|\d{1,2}/\d{1,2}/\d{4})\b",
             sourceText,
             re.IGNORECASE,
         )

@@ -28,9 +28,17 @@ class PollDiscovery:
         selectors = (
             '[data-testid="poll-view-votes"]',
             'div[role="button"]:has-text("View votes")',
+            'button:has-text("View votes")',
             'span:has-text("View votes")',
+            'div:has-text("View votes")',
             'text="View votes"',
         )
+        # selectors = (
+        #    '[data-testid="poll-view-votes"]',
+        #    'div[role="button"]:has-text("View votes")',
+        #    'span:has-text("View votes")',
+        #    'text="View votes"',
+        # )
 
         for selector in selectors:
             try:
@@ -149,9 +157,10 @@ class PollDiscovery:
 
     def extractPollSourceText(self, locator) -> str:
         for selector in (
+            "xpath=ancestor-or-self::*[contains(., 'Select one or more') and contains(., 'View votes')][1]",
+            "xpath=ancestor-or-self::*[contains(., 'View votes')][1]",
             'xpath=ancestor-or-self::*[@data-testid][contains(@data-testid, "msg")][1]',
             "xpath=ancestor-or-self::*[@data-id][1]",
-            'xpath=ancestor::*[contains(., "View votes")][1]',
         ):
             try:
                 text = locator.locator(selector).first.inner_text(timeout=1000)
@@ -164,3 +173,18 @@ class PollDiscovery:
             return locator.inner_text(timeout=1000)
         except Exception:
             return ""
+
+    def logVisiblePollText(self, page) -> None:
+        try:
+            matches = page.locator("text=View votes")
+            self.logger.info("...visible View votes count: %s", matches.count())
+        except Exception as exc:
+            self.logger.warning("Unable to count visible View votes: %s", exc)
+
+        try:
+            bodyText = page.locator("body").inner_text(timeout=2000)
+            for line in bodyText.splitlines():
+                if "View votes" in line or "Select one or more" in line:
+                    self.logger.info("...visible poll marker: %s", line[:120])
+        except Exception as exc:
+            self.logger.warning("Unable to inspect visible poll text: %s", exc)
