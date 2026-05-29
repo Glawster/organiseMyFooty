@@ -105,6 +105,27 @@ def test_build_summary_rows_counts_votes():
     assert alice["totalVotes"] == 2
 
 
+def test_build_attendance_report_rows_supports_date_only_session_dates():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    builder = AttendanceReportBuilder(parser)
+
+    rows = builder.buildAttendanceReportRows(
+        [
+            _record(
+                pollTitle="Monday Training",
+                pollDateText="20260301",
+                sessionDateText="20260302",
+                voterName="Alice",
+            )
+        ]
+    )
+
+    assert rows[0] == ["week", "week 1"]
+    assert rows[1] == ["date", "02/03/26"]
+    assert rows[3] == ["day", "Monday"]
+    assert rows[5] == ["Alice", "yes"]
+
+
 # ---------------------------------------------------------------------------
 # discovery
 # ---------------------------------------------------------------------------

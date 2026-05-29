@@ -61,10 +61,8 @@ class AttendanceReportBuilder:
 
         for week in sessionsByWeek.values():
             week.sort(
-                key=lambda s: datetime.strptime(
-                    s.sessionDateText or "99991231 00:00",
-                    "%Y%m%d %H:%M",
-                )
+                key=lambda s: self.parseSessionDateText(s.sessionDateText)
+                or datetime.max
             )
 
         weekHeader = ["week"]
@@ -79,12 +77,8 @@ class AttendanceReportBuilder:
                 weekHeader.append(f"week {weekNumber}" if i == 0 else "")
                 dateHeader.append(self.formatSessionDateText(session.sessionDateText))
                 venueHeader.append(session.venueName)
-                dayHeader.append(
-                    datetime.strptime(
-                        session.sessionDateText,
-                        "%Y%m%d %H:%M",
-                    ).strftime("%A")
-                )
+                sessionDate = self.parseSessionDateText(session.sessionDateText)
+                dayHeader.append(sessionDate.strftime("%A") if sessionDate else "")
                 sessionHeader.append(session.sessionName)
                 columns.append(session)
 
@@ -185,13 +179,19 @@ class AttendanceReportBuilder:
         return list(sessions.keys())
 
     def formatSessionDateText(self, sessionDateText: str) -> str:
-        if not sessionDateText:
-            return ""
+        sessionDate = self.parseSessionDateText(sessionDateText)
+        if sessionDate:
+            return sessionDate.strftime("%d/%m/%y")
+        return sessionDateText
 
-        try:
-            return datetime.strptime(
-                sessionDateText,
-                "%Y%m%d %H:%M",
-            ).strftime("%d/%m/%y")
-        except ValueError:
-            return sessionDateText
+    def parseSessionDateText(self, sessionDateText: str) -> datetime | None:
+        if not sessionDateText:
+            return None
+
+        for fmt in ("%Y%m%d %H:%M", "%Y%m%d"):
+            try:
+                return datetime.strptime(sessionDateText, fmt)
+            except ValueError:
+                continue
+
+        return None
