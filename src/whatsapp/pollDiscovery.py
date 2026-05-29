@@ -108,17 +108,11 @@ class PollDiscovery:
             return ""
 
     ## locator helpers
-
     def resolvePollButton(self, locator):
-        try:
-            text = locator.inner_text(timeout=500)
-            if self.selectors.viewVotesText.lower() in text.lower():
-                return locator
-        except Exception:
-            pass
-
         for selector in (
             '[data-testid="poll-view-votes"]',
+            'div[role="button"]:has-text("View votes")',
+            'button:has-text("View votes")',
             f'text="{self.selectors.viewVotesText}"',
         ):
             try:
@@ -127,6 +121,7 @@ class PollDiscovery:
                     return button
             except Exception:
                 continue
+
         return locator
 
     def extractMessageKey(self, locator) -> str:
