@@ -156,6 +156,12 @@ def buildParser(state: dict) -> argparse.ArgumentParser:
         help="execute changes and write CSV exports (default is dry-run)",
     )
 
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="only include sessions whose derived session date is inside the selected month window",
+    )
+
     return parser
 
 
@@ -184,6 +190,7 @@ def buildConfig(args: argparse.Namespace, dryRun: bool) -> Config:
         includeNoVotes=False,
         resume=False,
         pollTitleFilter=None,
+        strictMonth=args.strict,
     )
 
     return Config(runtime=runtime)

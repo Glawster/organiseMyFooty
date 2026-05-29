@@ -83,6 +83,7 @@ python exportAttendance.py --group "My Footy Group" --month 2026-03 --confirm
 | `--browser-channel` | Playwright browser channel, e.g. `chrome` |
 | `--include-no-votes` | Also collect "No" voters |
 | `--poll-title-filter` | Only process polls whose text contains this substring |
+| `--strict` | Only include polls whose derived session date falls inside the selected month window |
 | `--headless` | Run browser without showing a window |
 | `--confirm` | Write CSV exports; omit to run in safe dry-run mode (default) |
 

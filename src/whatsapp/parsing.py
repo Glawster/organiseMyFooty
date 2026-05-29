@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Iterable
 import re
 
@@ -43,6 +43,25 @@ class PollTextParser:
         timeText, _venueText = self.extractSessionParts(pollTitle)
 
         return f"{sessionDate.strftime('%Y%m%d')} {timeText}"
+
+    def parseSessionDateValue(self, sessionDateText: str) -> date | None:
+        if not sessionDateText:
+            return None
+
+        try:
+            return datetime.strptime(sessionDateText[:8], "%Y%m%d").date()
+        except ValueError:
+            return None
+
+    def isSessionInMonthWindow(self, sessionDateText: str) -> bool:
+        if not self.config.strictMonth:
+            return True
+
+        sessionDate = self.parseSessionDateValue(sessionDateText)
+        if sessionDate is None:
+            return False
+
+        return self.config.monthWindow.startDate <= sessionDate <= self.config.monthWindow.endDate
 
     def normaliseDateText(self, dateText: str) -> str:
         text = " ".join(dateText.split()).strip().lower()

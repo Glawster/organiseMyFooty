@@ -53,6 +53,14 @@ class PollRecordsBuilder:
         self.logger.value("poll date text", pollDateText)
         self.logger.value("session date text", sessionDateText)
 
+        if not self.parser.isSessionInMonthWindow(sessionDateText):
+            self.logger.info(
+                "skipping poll outside month window: %s (%s)",
+                pollTitle,
+                sessionDateText or "unknown date",
+            )
+            return []
+
         pollRecords = self.buildOptionRecords(
             dialogText=dialogText,
             pollTitle=pollTitle,

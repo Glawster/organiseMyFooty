@@ -8,12 +8,15 @@ from datetime import date
 from attendanceConfig import MonthWindow, RuntimeConfig
 
 from whatsapp.models import PollRecord
+from whatsapp.pollRecordsBuilder import PollRecordsBuilder
 from whatsapp.parsing import PollTextParser
 from whatsapp.reports import AttendanceReportBuilder
 from whatsapp.records import deduplicateRecords
+from whatsapp.cache import PollCacheStore
 from whatsapp.pollDiscovery import PollDiscovery
 from whatsapp.pollDialog import PollDialog
 from whatsapp.selectors import DEFAULT_SELECTORS
+from whatsapp.constants import POLL_CACHE_VERSION
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -38,6 +41,7 @@ def _make_config(**overrides) -> RuntimeConfig:
         includeNoVotes=False,
         resume=False,
         pollTitleFilter=None,
+        strictMonth=False,
     )
     defaults.update(overrides)
     return RuntimeConfig(**defaults)
@@ -81,6 +85,85 @@ def test_clean_voter_names():
     parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
     result = parser.cleanVoterNames(["Alice", "Alice", "10:30", "Yes"])
     assert result == ["Alice"]
+
+
+def test_is_session_in_month_window_returns_true_when_not_strict():
+    parser = PollTextParser(_make_config(strictMonth=False), DEFAULT_SELECTORS)
+
+    assert parser.isSessionInMonthWindow("20260406 19:00") is True
+
+
+def test_is_session_in_month_window_returns_false_for_out_of_month_strict():
+    parser = PollTextParser(_make_config(strictMonth=True), DEFAULT_SELECTORS)
+
+    assert parser.isSessionInMonthWindow("20260406 19:00") is False
+
+
+class StubDiscoveryWithDate:
+    def __init__(self, raw_date_text: str):
+        self.raw_date_text = raw_date_text
+
+    def extractPollDateText(self, locator, sourceText: str) -> str:
+        return self.raw_date_text
+
+
+def test_build_poll_records_from_dialog_skips_out_of_month_when_strict():
+    config = _make_config(strictMonth=True)
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    builder = PollRecordsBuilder(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        discovery=StubDiscoveryWithDate("01/04/2026"),
+    )
+
+    records = builder.buildPollRecordsFromDialog(
+        locator=None,
+        dialog=None,
+        dialogText="Monday 7pm LLC\nYes\nAlice",
+        sourceText="Monday 7pm LLC\n01/04/2026\nView votes",
+    )
+
+    assert records == []
+
+
+def test_build_poll_records_from_dialog_keeps_out_of_month_when_not_strict():
+    config = _make_config(strictMonth=False)
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    builder = PollRecordsBuilder(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        discovery=StubDiscoveryWithDate("01/04/2026"),
+    )
+
+    records = builder.buildPollRecordsFromDialog(
+        locator=None,
+        dialog=None,
+        dialogText="Monday 7pm LLC\nYes\nAlice",
+        sourceText="Monday 7pm LLC\n01/04/2026\nView votes",
+    )
+
+    assert len(records) == 1
+    assert records[0].sessionDateText == "20260406 19:00"
+
+
+def test_poll_cache_payload_respects_strict_mode():
+    config = _make_config(strictMonth=True)
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    cache_store = PollCacheStore(config=config, parser=parser)
+
+    is_valid = cache_store.isValidCachePayload(
+        {
+            "version": POLL_CACHE_VERSION,
+            "groupName": config.groupName,
+            "month": config.monthWindow.monthKey,
+            "strictMonth": False,
+        },
+        Path("/tmp/pollCache.json"),
+    )
+
+    assert is_valid is False
 
 
 # ---------------------------------------------------------------------------

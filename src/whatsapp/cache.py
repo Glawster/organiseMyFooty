@@ -77,6 +77,11 @@ class PollCacheStore:
         if payload.get("month") != self.config.monthWindow.monthKey:
             self.logger.info("ignoring poll cache for different month: %s", cachePath)
             return False
+        if bool(payload.get("strictMonth")) != self.config.strictMonth:
+            self.logger.info(
+                "ignoring poll cache for different strict mode: %s", cachePath
+            )
+            return False
         return True
 
     def recordsFromCacheRows(self, rows: list[dict]) -> list[PollRecord]:
@@ -85,19 +90,20 @@ class PollCacheStore:
             if not isinstance(row, dict):
                 continue
             try:
-                records.append(
-                    PollRecord(
+                record = PollRecord(
+                    pollTitle=str(row["pollTitle"]),
+                    pollDateText=str(row["pollDateText"]),
+                    sessionDateText=self.parser.calculateSessionDateText(
                         pollTitle=str(row["pollTitle"]),
                         pollDateText=str(row["pollDateText"]),
-                        sessionDateText=self.parser.calculateSessionDateText(
-                            pollTitle=str(row["pollTitle"]),
-                            pollDateText=str(row["pollDateText"]),
-                        ),
-                        option=str(row["option"]),
-                        voterName=str(row["voterName"]),
-                        sourceHint=str(row["sourceHint"]),
-                    )
+                    ),
+                    option=str(row["option"]),
+                    voterName=str(row["voterName"]),
+                    sourceHint=str(row["sourceHint"]),
                 )
+                if not self.parser.isSessionInMonthWindow(record.sessionDateText):
+                    continue
+                records.append(record)
             except KeyError:
                 continue
         return deduplicateRecords(records)
@@ -123,6 +129,7 @@ class PollCacheStore:
             "version": POLL_CACHE_VERSION,
             "groupName": self.config.groupName,
             "month": self.config.monthWindow.monthKey,
+            "strictMonth": self.config.strictMonth,
             "savedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "recentPollsToRecheck": RECENT_POLLS_TO_RECHECK,
             "polls": {
