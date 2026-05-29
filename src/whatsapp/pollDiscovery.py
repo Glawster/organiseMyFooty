@@ -30,7 +30,6 @@ class PollDiscovery:
             'div[role="button"]:has-text("View votes")',
             'button:has-text("View votes")',
             'span:has-text("View votes")',
-            'div:has-text("View votes")',
             'text="View votes"',
         )
         # selectors = (
@@ -53,7 +52,8 @@ class PollDiscovery:
                 if self.selectors.viewVotesText.lower() not in sourceText.lower():
                     continue
 
-                key = f"{selector}|{index}|{sourceText[:120]}"
+                messageKey = self.extractMessageKey(item)
+                key = messageKey or "|".join(sourceText.split())[:300]
                 if key in seenKeys:
                     continue
 
@@ -119,7 +119,6 @@ class PollDiscovery:
 
         for selector in (
             '[data-testid="poll-view-votes"]',
-            'div[role="button"]:has-text("View votes")',
             f'text="{self.selectors.viewVotesText}"',
         ):
             try:

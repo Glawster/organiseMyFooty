@@ -52,6 +52,7 @@ class WhatsAppPollScraper:
 
         recordsByPollKey = self.cacheStore.loadPollCache()
         pollCount = 0
+        seenPollKeys: set[str] = set()
 
         with sync_playwright() as playwright:
             browserContext = playwright.chromium.launch_persistent_context(
@@ -65,23 +66,38 @@ class WhatsAppPollScraper:
                 page.goto(self.selectors.webUrl)
                 self.navigation.waitForWhatsAppReady(page)
                 self.navigation.openGroup(page, self.config.groupName)
-                self.navigation.scrollChatHistory(page)
-                self.discovery.logVisiblePollText(page)
 
-                pollLocators = self.discovery.findPollCards(page)
-                totalPolls = len(pollLocators)
+                for scrollPass in range(40):
+                    pollLocators = self.discovery.findPollCards(page)
 
-                for index, locator in enumerate(pollLocators, start=1):
+                    for locator in pollLocators:
+                        sourceText = self.discovery.extractPollSourceText(locator)
+                        messageKey = self.discovery.extractMessageKey(locator)
+                        key = messageKey or "|".join(sourceText.split())[:300]
+
+                        if key in seenPollKeys:
+                            continue
+
+                        seenPollKeys.add(key)
+
+                        if self.hasReachedPollLimit(pollCount):
+                            break
+
+                        pollCount += self.scrapePollLocator(
+                            page=page,
+                            locator=locator,
+                            index=pollCount + 1,
+                            totalPolls=len(seenPollKeys),
+                            recordsByPollKey=recordsByPollKey,
+                        )
+
+                    self.logger.info("poll cards collected: %s", len(seenPollKeys))
+
                     if self.hasReachedPollLimit(pollCount):
                         break
 
-                    pollCount += self.scrapePollLocator(
-                        page=page,
-                        locator=locator,
-                        index=index,
-                        totalPolls=totalPolls,
-                        recordsByPollKey=recordsByPollKey,
-                    )
+                    page.mouse.wheel(0, -2500)
+                    page.wait_for_timeout(900)
 
             finally:
                 browserContext.close()
