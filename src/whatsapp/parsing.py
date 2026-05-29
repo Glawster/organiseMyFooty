@@ -61,7 +61,11 @@ class PollTextParser:
         if sessionDate is None:
             return False
 
-        return self.config.monthWindow.startDate <= sessionDate <= self.config.monthWindow.endDate
+        return (
+            self.config.monthWindow.startDate
+            <= sessionDate
+            <= self.config.monthWindow.endDate
+        )
 
     def normaliseDateText(self, dateText: str) -> str:
         text = " ".join(dateText.split()).strip().lower()
