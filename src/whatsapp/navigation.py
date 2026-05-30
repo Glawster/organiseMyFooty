@@ -59,65 +59,21 @@ class WhatsAppNavigation:
         self.logger.info("group opened")
 
     def clickOlderMessagesBanner(self, page) -> bool:
-        try:
-            banner = page.get_by_text(
-                "Click here to get older messages from your phone",
-                exact=False,
-            ).first
-
-            if banner.is_visible(timeout=500):
-                self.logger.info("...loading older messages from phone")
-                banner.click(timeout=2000)
-                page.wait_for_timeout(2500)
-                return True
-        except Exception:
-            pass
-
-        return False
-
-    def _scrollChatHistory(self, page, scrollPasses: int = 1) -> None:
-
-        self.logger.doing("scrolling chat history")
-
-        for _ in range(scrollPasses):
-            if self.clickOlderMessagesBanner(page):
+        for text in (
+            "Click here to get older messages from your phone",
+            "Use WhatsApp on your phone to see older messages",
+        ):
+            try:
+                banner = page.get_by_text(text, exact=False).first
+                if banner.is_visible(timeout=500):
+                    self.logger.info("loading older messages from phone")
+                    banner.click(timeout=2000)
+                    page.wait_for_timeout(2500)
+                    return True
+            except Exception:
                 continue
 
-        script = """
-        () => {
-            const elements = Array.from(document.querySelectorAll('*'));
-
-            const scrollables = elements
-                .filter(el => el.scrollHeight > el.clientHeight + 100)
-                .map((el, index) => ({
-                    index,
-                    tag: el.tagName,
-                    role: el.getAttribute('role'),
-                    ariaLabel: el.getAttribute('aria-label'),
-                    dataTestId: el.getAttribute('data-testid'),
-                    className: String(el.className || '').slice(0, 80),
-                    scrollTop: el.scrollTop,
-                    scrollHeight: el.scrollHeight,
-                    clientHeight: el.clientHeight,
-                    text: String(el.innerText || '').slice(0, 80),
-                }))
-                .sort((a, b) =>
-                    (b.scrollHeight - b.clientHeight) -
-                    (a.scrollHeight - a.clientHeight)
-                );
-
-            return scrollables.slice(0, 10);
-        }
-        """
-
-        for _ in range(scrollPasses):
-            try:
-                candidates = page.evaluate(script)
-                self.logger.info("scroll candidates: %s", candidates)
-            except Exception as exc:
-                self.logger.warning("Unable to inspect scroll candidates: %s", exc)
-
-            page.wait_for_timeout(900)
+        return False
 
     def scrollChatHistory(self, page, scrollPasses: int = 1) -> None:
         self.logger.doing("scrolling chat history")
@@ -137,12 +93,16 @@ class WhatsAppNavigation:
                 })
                 .map((el) => ({
                     el,
+                    dataTestId: el.getAttribute('data-testid'),
                     scrollHeight: el.scrollHeight,
                     clientHeight: el.clientHeight,
                     scrollTop: el.scrollTop,
                     text: (el.innerText || '').slice(0, 120),
                 }))
-                .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight));
+                .sort((a, b) =>
+                    (b.scrollHeight - b.clientHeight) -
+                    (a.scrollHeight - a.clientHeight)
+                );
 
             if (!scrollables.length) {
                 return {
@@ -153,8 +113,7 @@ class WhatsAppNavigation:
 
             const target = scrollables[0];
             const before = target.el.scrollTop;
-
-            target.el.scrollTop = Math.max(0, target.el.scrollTop - 500);
+            target.el.scrollTop = Math.max(0, before - 500);
 
             return {
                 didScroll: target.el.scrollTop !== before,
@@ -162,38 +121,16 @@ class WhatsAppNavigation:
                 after: target.el.scrollTop,
                 scrollHeight: target.scrollHeight,
                 clientHeight: target.clientHeight,
+                dataTestId: target.dataTestId,
                 text: target.text,
             };
         }
         """
 
-        result = page.evaluate(
-            """
-        () => {
-            const elements = Array.from(document.querySelectorAll('*'));
-
-            const scrollables = elements
-                .filter(el => el.scrollHeight > el.clientHeight + 100)
-                .map(el => ({
-                    tag: el.tagName,
-                    className: el.className,
-                    scrollTop: el.scrollTop,
-                    scrollHeight: el.scrollHeight,
-                    clientHeight: el.clientHeight
-                }))
-                .sort((a,b) =>
-                    (b.scrollHeight - b.clientHeight) -
-                    (a.scrollHeight - a.clientHeight)
-                );
-
-            return scrollables.slice(0,5);
-        }
-        """
-        )
-
-        self.logger.info("scroll candidates: %s", result)
-
         for _ in range(scrollPasses):
+            if self.clickOlderMessagesBanner(page):
+                continue
+
             try:
                 result = page.evaluate(script)
                 self.logger.info("chat scroll result: %s", result)
