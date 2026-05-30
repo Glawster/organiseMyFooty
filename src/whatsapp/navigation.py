@@ -75,7 +75,7 @@ class WhatsAppNavigation:
 
         return False
 
-    def scrollChatHistory(self, page, scrollPasses: int = 1) -> None:
+    def _scrollChatHistory(self, page, scrollPasses: int = 1) -> None:
 
         self.logger.doing("scrolling chat history")
 
@@ -119,7 +119,7 @@ class WhatsAppNavigation:
 
             page.wait_for_timeout(900)
 
-    def _scrollChatHistory(self, page, scrollPasses: int = 1) -> None:
+    def scrollChatHistory(self, page, scrollPasses: int = 1) -> None:
         self.logger.doing("scrolling chat history")
 
         script = """
@@ -154,7 +154,7 @@ class WhatsAppNavigation:
             const target = scrollables[0];
             const before = target.el.scrollTop;
 
-            target.el.scrollTop = Math.max(0, target.el.scrollTop - 2500);
+            target.el.scrollTop = Math.max(0, target.el.scrollTop - 500);
 
             return {
                 didScroll: target.el.scrollTop !== before,

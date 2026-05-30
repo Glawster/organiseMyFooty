@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from datetime import timedelta
 
 from attendanceConfig import RuntimeConfig
 from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
@@ -45,6 +46,27 @@ class WhatsAppPollScraper:
             discovery=self.discovery,
         )
 
+    def extractVisibleDateText(self, page) -> str:
+        try:
+            bodyText = page.locator("body").inner_text(timeout=1000)
+        except Exception:
+            return ""
+
+        return bodyText
+
+    def hasReachedTargetMonth(self, visibleText: str) -> bool:
+        monthStartText = self.config.monthWindow.startDate.strftime("%d/%m/%Y")
+        monthKeyText = self.config.monthWindow.startDate.strftime("/%m/%Y")
+
+        return monthStartText in visibleText or monthKeyText in visibleText
+
+    def hasPassedBeforeTargetMonth(self, visibleText: str) -> bool:
+        previousMonthDate = self.config.monthWindow.startDate - timedelta(days=1)
+        previousMonthText = previousMonthDate.strftime("/%m/%Y")
+        targetMonthText = self.config.monthWindow.startDate.strftime("/%m/%Y")
+
+        return previousMonthText in visibleText and targetMonthText not in visibleText
+
     ## public api
 
     def collectPollAttendance(self) -> list[PollRecord]:
@@ -67,8 +89,24 @@ class WhatsAppPollScraper:
                 self.navigation.waitForWhatsAppReady(page)
                 self.navigation.openGroup(page, self.config.groupName)
 
-                for scrollPass in range(40):
+                foundTargetMonth = False
+                for scrollPass in range(120):
                     pollLocators = self.discovery.findPollCards(page)
+                    visibleText = self.extractVisibleDateText(page)
+
+                    if self.config.strictMonth and self.hasReachedTargetMonth(
+                        visibleText
+                    ):
+                        foundTargetMonth = True
+
+                    if (
+                        self.config.strictMonth
+                        and foundTargetMonth
+                        and self.hasPassedBeforeTargetMonth(visibleText)
+                    ):
+                        self.logger.info("reached before target month; stopping scroll")
+                        break
+
                     self.logger.info(
                         "candidate poll cards found: %s (scroll pass %s)",
                         len(pollLocators),
