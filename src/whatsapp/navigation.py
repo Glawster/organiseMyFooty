@@ -58,8 +58,124 @@ class WhatsAppNavigation:
         candidate.click(timeout=self.config.timeoutMs)
         self.logger.info("group opened")
 
-    def scrollChatHistory(self, page, scrollPasses: int = 12) -> None:
+    def scrollChatHistory(self, page, scrollPasses: int = 1) -> None:
         self.logger.doing("scrolling chat history")
+
+        script = """
+        () => {
+            const elements = Array.from(document.querySelectorAll('*'));
+
+            const scrollables = elements
+                .filter(el => el.scrollHeight > el.clientHeight + 100)
+                .map((el, index) => ({
+                    index,
+                    tag: el.tagName,
+                    role: el.getAttribute('role'),
+                    ariaLabel: el.getAttribute('aria-label'),
+                    dataTestId: el.getAttribute('data-testid'),
+                    className: String(el.className || '').slice(0, 80),
+                    scrollTop: el.scrollTop,
+                    scrollHeight: el.scrollHeight,
+                    clientHeight: el.clientHeight,
+                    text: String(el.innerText || '').slice(0, 80),
+                }))
+                .sort((a, b) =>
+                    (b.scrollHeight - b.clientHeight) -
+                    (a.scrollHeight - a.clientHeight)
+                );
+
+            return scrollables.slice(0, 10);
+        }
+        """
+
         for _ in range(scrollPasses):
-            page.mouse.wheel(0, -2000)
-            page.wait_for_timeout(800)
+            try:
+                candidates = page.evaluate(script)
+                self.logger.info("scroll candidates: %s", candidates)
+            except Exception as exc:
+                self.logger.warning("Unable to inspect scroll candidates: %s", exc)
+
+            page.wait_for_timeout(900)
+
+    def _scrollChatHistory(self, page, scrollPasses: int = 1) -> None:
+        self.logger.doing("scrolling chat history")
+
+        script = """
+        () => {
+            const elements = Array.from(document.querySelectorAll('*'));
+
+            const scrollables = elements
+                .filter((el) => {
+                    const style = window.getComputedStyle(el);
+                    const canScroll =
+                        ['auto', 'scroll'].includes(style.overflowY) ||
+                        ['auto', 'scroll'].includes(style.overflow);
+
+                    return canScroll && el.scrollHeight > el.clientHeight + 200;
+                })
+                .map((el) => ({
+                    el,
+                    scrollHeight: el.scrollHeight,
+                    clientHeight: el.clientHeight,
+                    scrollTop: el.scrollTop,
+                    text: (el.innerText || '').slice(0, 120),
+                }))
+                .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight));
+
+            if (!scrollables.length) {
+                return {
+                    didScroll: false,
+                    reason: 'no scrollable candidates',
+                };
+            }
+
+            const target = scrollables[0];
+            const before = target.el.scrollTop;
+
+            target.el.scrollTop = Math.max(0, target.el.scrollTop - 2500);
+
+            return {
+                didScroll: target.el.scrollTop !== before,
+                before,
+                after: target.el.scrollTop,
+                scrollHeight: target.scrollHeight,
+                clientHeight: target.clientHeight,
+                text: target.text,
+            };
+        }
+        """
+
+        result = page.evaluate(
+            """
+        () => {
+            const elements = Array.from(document.querySelectorAll('*'));
+
+            const scrollables = elements
+                .filter(el => el.scrollHeight > el.clientHeight + 100)
+                .map(el => ({
+                    tag: el.tagName,
+                    className: el.className,
+                    scrollTop: el.scrollTop,
+                    scrollHeight: el.scrollHeight,
+                    clientHeight: el.clientHeight
+                }))
+                .sort((a,b) =>
+                    (b.scrollHeight - b.clientHeight) -
+                    (a.scrollHeight - a.clientHeight)
+                );
+
+            return scrollables.slice(0,5);
+        }
+        """
+        )
+
+        self.logger.info("scroll candidates: %s", result)
+
+        for _ in range(scrollPasses):
+            try:
+                result = page.evaluate(script)
+                self.logger.info("chat scroll result: %s", result)
+            except Exception as exc:
+                self.logger.warning("Unable to scroll chat history: %s", exc)
+
+            page.wait_for_timeout(1200)

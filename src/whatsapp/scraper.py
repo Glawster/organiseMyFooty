@@ -69,6 +69,32 @@ class WhatsAppPollScraper:
 
                 for scrollPass in range(40):
                     pollLocators = self.discovery.findPollCards(page)
+                    self.logger.info(
+                        "candidate poll cards found: %s (scroll pass %s)",
+                        len(pollLocators),
+                        scrollPass + 1,
+                    )
+
+                    if pollLocators:
+                        sourceText = self.discovery.extractPollSourceText(
+                            pollLocators[0]
+                        )
+                        pollTitle = self.parser.extractPollTitle(sourceText=sourceText)
+                        lastSourceText = self.discovery.extractPollSourceText(
+                            pollLocators[-1]
+                        )
+                        lastPollTitle = self.parser.extractPollTitle(
+                            sourceText=lastSourceText
+                        )
+
+                        self.logger.value(
+                            "found poll",
+                            pollTitle or sourceText[:50],
+                        )
+                        self.logger.value(
+                            "last poll",
+                            lastPollTitle or lastSourceText[:50],
+                        )
 
                     for locator in pollLocators:
                         sourceText = self.discovery.extractPollSourceText(locator)
@@ -91,12 +117,12 @@ class WhatsAppPollScraper:
                             recordsByPollKey=recordsByPollKey,
                         )
 
-                    self.logger.info("poll cards collected: %s", len(seenPollKeys))
+                    # self.logger.info("poll cards collected: %s", len(seenPollKeys))
 
                     if self.hasReachedPollLimit(pollCount):
                         break
 
-                    page.mouse.wheel(0, -2500)
+                    self.navigation.scrollChatHistory(page, scrollPasses=1)
                     page.wait_for_timeout(900)
 
             finally:

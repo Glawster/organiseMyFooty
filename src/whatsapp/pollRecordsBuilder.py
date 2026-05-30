@@ -48,10 +48,17 @@ class PollRecordsBuilder:
             pollDateText=pollDateText,
         )
 
-        drawBox(sourceText[:500], width=40)
-        self.logger.value("raw date text", rawDateText)
-        self.logger.value("poll date text", pollDateText)
-        self.logger.value("session date text", sessionDateText)
+        boxText = "\n".join(
+            [
+                sourceText[:500].rstrip(),
+                "",
+                f"raw date:     {rawDateText}",
+                f"poll date:    {pollDateText}",
+                f"session date: {sessionDateText}",
+            ]
+        )
+
+        drawBox(boxText, width=44)
 
         if not self.parser.isSessionInMonthWindow(sessionDateText):
             self.logger.info(
