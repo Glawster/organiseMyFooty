@@ -60,7 +60,6 @@ class PollDiscovery:
                 seenKeys.add(key)
                 pollLocators.append(item)
 
-        self.logger.value("candidate poll cards found", len(pollLocators))
         return pollLocators
 
     def extractPollDateText(self, locator, sourceText: str) -> str:
