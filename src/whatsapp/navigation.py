@@ -58,8 +58,30 @@ class WhatsAppNavigation:
         candidate.click(timeout=self.config.timeoutMs)
         self.logger.info("group opened")
 
+    def clickOlderMessagesBanner(self, page) -> bool:
+        try:
+            banner = page.get_by_text(
+                "Click here to get older messages from your phone",
+                exact=False,
+            ).first
+
+            if banner.is_visible(timeout=500):
+                self.logger.info("...loading older messages from phone")
+                banner.click(timeout=2000)
+                page.wait_for_timeout(2500)
+                return True
+        except Exception:
+            pass
+
+        return False
+
     def scrollChatHistory(self, page, scrollPasses: int = 1) -> None:
+
         self.logger.doing("scrolling chat history")
+
+        for _ in range(scrollPasses):
+            if self.clickOlderMessagesBanner(page):
+                continue
 
         script = """
         () => {
