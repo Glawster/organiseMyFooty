@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from datetime import timedelta
+from datetime import date, datetime, timedelta
+import re
 
 from attendanceConfig import RuntimeConfig
 from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
@@ -46,26 +47,53 @@ class WhatsAppPollScraper:
             discovery=self.discovery,
         )
 
-    def extractVisibleDateText(self, page) -> str:
+    ## date window helpers
+
+    def extractVisibleChatText(self, page) -> str:
         try:
-            bodyText = page.locator("body").inner_text(timeout=1000)
+            return page.locator(
+                '[data-testid="conversation-panel-messages"]'
+            ).first.inner_text(timeout=1000)
         except Exception:
             return ""
 
-        return bodyText
+    def extractVisibleChatDates(self, page) -> list[date]:
+        visibleText = self.extractVisibleChatText(page)
+        visibleDates: list[date] = []
 
-    def hasReachedTargetMonth(self, visibleText: str) -> bool:
-        monthStartText = self.config.monthWindow.startDate.strftime("%d/%m/%Y")
-        monthKeyText = self.config.monthWindow.startDate.strftime("/%m/%Y")
+        for match in re.finditer(r"\b\d{1,2}/\d{1,2}/\d{4}\b", visibleText):
+            try:
+                visibleDates.append(
+                    datetime.strptime(match.group(0), "%d/%m/%Y").date()
+                )
+            except ValueError:
+                continue
 
-        return monthStartText in visibleText or monthKeyText in visibleText
+        return visibleDates
 
-    def hasPassedBeforeTargetMonth(self, visibleText: str) -> bool:
-        previousMonthDate = self.config.monthWindow.startDate - timedelta(days=1)
-        previousMonthText = previousMonthDate.strftime("/%m/%Y")
-        targetMonthText = self.config.monthWindow.startDate.strftime("/%m/%Y")
+    def getStrictLookbackStartDate(self) -> date:
+        return self.config.monthWindow.startDate - timedelta(days=7)
 
-        return previousMonthText in visibleText and targetMonthText not in visibleText
+    def shouldStopForStrictLookback(self, page) -> bool:
+        if not self.config.strictMonth:
+            return False
+
+        visibleDates = self.extractVisibleChatDates(page)
+        if not visibleDates:
+            return False
+
+        newestVisibleDate = max(visibleDates)
+        lookbackStartDate = self.getStrictLookbackStartDate()
+
+        if newestVisibleDate >= lookbackStartDate:
+            return False
+
+        self.logger.info(
+            "reached before strict lookback window: newest visible date %s, cutoff %s",
+            newestVisibleDate,
+            lookbackStartDate,
+        )
+        return True
 
     ## public api
 
@@ -89,24 +117,11 @@ class WhatsAppPollScraper:
                 self.navigation.waitForWhatsAppReady(page)
                 self.navigation.openGroup(page, self.config.groupName)
 
-                foundTargetMonth = False
                 for scrollPass in range(120):
-                    pollLocators = self.discovery.findPollCards(page)
-                    visibleText = self.extractVisibleDateText(page)
-
-                    if self.config.strictMonth and self.hasReachedTargetMonth(
-                        visibleText
-                    ):
-                        foundTargetMonth = True
-
-                    if (
-                        self.config.strictMonth
-                        and foundTargetMonth
-                        and self.hasPassedBeforeTargetMonth(visibleText)
-                    ):
-                        self.logger.info("reached before target month; stopping scroll")
+                    if self.shouldStopForStrictLookback(page):
                         break
 
+                    pollLocators = self.discovery.findPollCards(page)
                     self.logger.info(
                         "candidate poll cards found: %s (scroll pass %s)",
                         len(pollLocators),
@@ -154,8 +169,6 @@ class WhatsAppPollScraper:
                             totalPolls=len(seenPollKeys),
                             recordsByPollKey=recordsByPollKey,
                         )
-
-                    # self.logger.info("poll cards collected: %s", len(seenPollKeys))
 
                     if self.hasReachedPollLimit(pollCount):
                         break
