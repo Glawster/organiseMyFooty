@@ -70,9 +70,10 @@ class AttendanceExporter:
             writer.writerows(rows)
 
     def writePollRows(self, rawRows: list[dict]) -> None:
-        self.logger.action("write polls.csv rows: %s", len(rawRows))
         if self.config.dryRun:
+            self.logger.info("dry run: skipping polls.csv write (%s rows)", len(rawRows))
             return
+        self.logger.action("write polls.csv rows: %s", len(rawRows))
 
         writeCsv(
             self.config.outputDir / "polls.csv",
@@ -88,11 +89,15 @@ class AttendanceExporter:
         )
 
     def writeReportRows(self, reportRows: list[list[str]]) -> None:
+        if self.config.dryRun:
+            self.logger.info(
+                "dry run: skipping attendanceReport.csv write (%s rows)",
+                max(0, len(reportRows) - 3),
+            )
+            return
         self.logger.action(
             "write attendanceReport.csv rows: %s", max(0, len(reportRows) - 3)
         )
-        if self.config.dryRun:
-            return
 
         self.writeAttendanceReportCsv(
             self.config.outputDir / "attendanceReport.csv",
@@ -100,9 +105,13 @@ class AttendanceExporter:
         )
 
     def writeSummaryRows(self, summaryRows: list[dict]) -> None:
-        self.logger.action("write attendanceSummary.csv rows: %s", len(summaryRows))
         if self.config.dryRun:
+            self.logger.info(
+                "dry run: skipping attendanceSummary.csv write (%s rows)",
+                len(summaryRows),
+            )
             return
+        self.logger.action("write attendanceSummary.csv rows: %s", len(summaryRows))
 
         writeCsv(
             self.config.outputDir / "attendanceSummary.csv",
@@ -126,9 +135,10 @@ class AttendanceExporter:
             "attendanceReportRows": reportRows,
         }
 
-        self.logger.action("write preview json: %s", previewPath)
         if self.config.dryRun:
+            self.logger.info("dry run: skipping preview json write: %s", previewPath)
             return
+        self.logger.action("write preview json: %s", previewPath)
 
         previewPath.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"

@@ -17,6 +17,7 @@ from whatsapp.pollDiscovery import PollDiscovery
 from whatsapp.pollDialog import PollDialog
 from whatsapp.selectors import DEFAULT_SELECTORS
 from whatsapp.constants import POLL_CACHE_VERSION
+from whatsapp.exporter import AttendanceExporter
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -166,6 +167,24 @@ def test_poll_cache_payload_respects_strict_mode():
     assert is_valid is False
 
 
+def test_save_poll_cache_logs_skip_in_dry_run(tmp_path):
+    config = _make_config(outputDir=tmp_path, dryRun=True)
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    cache_store = PollCacheStore(config=config, parser=parser)
+
+    cache_store.savePollCache({"poll-1": [_record()]})
+
+    assert cache_store.getPollCachePath().exists() is False
+    assert ("action", ("write poll cache: %s", cache_store.getPollCachePath()), {}) not in (
+        cache_store.logger.messages
+    )
+    assert (
+        "info",
+        ("dry run: skipping poll cache write: %s", cache_store.getPollCachePath()),
+        {},
+    ) in cache_store.logger.messages
+
+
 # ---------------------------------------------------------------------------
 # reports
 # ---------------------------------------------------------------------------
@@ -207,6 +226,24 @@ def test_build_attendance_report_rows_supports_date_only_session_dates():
     assert rows[1] == ["date", "02/03/26"]
     assert rows[3] == ["day", "Monday"]
     assert rows[5] == ["Alice", "yes"]
+
+
+def test_write_preview_json_logs_skip_in_dry_run(tmp_path):
+    config = _make_config(outputDir=tmp_path, dryRun=True)
+    exporter = AttendanceExporter(config)
+    preview_path = tmp_path / "exportPreview.json"
+
+    exporter.writePreviewJson(rawRows=[{"pollTitle": "Training"}], summaryRows=[], reportRows=[])
+
+    assert preview_path.exists() is False
+    assert ("action", ("write preview json: %s", preview_path), {}) not in (
+        exporter.logger.messages
+    )
+    assert (
+        "info",
+        ("dry run: skipping preview json write: %s", preview_path),
+        {},
+    ) in exporter.logger.messages
 
 
 # ---------------------------------------------------------------------------
