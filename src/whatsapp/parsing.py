@@ -275,8 +275,8 @@ class PollTextParser:
 
     # ## text matching utilities
     def extractLikelyDateText(self, sourceText: str) -> str:
-        match = re.search(
-            r"\b(?:today|yesterday|\d{1,2}/\d{1,2}/\d{4}|\d{1,2}:\d{2})\b",
+        dateMatch = re.search(
+            r"\b(?:today|yesterday|\d{1,2}/\d{1,2}/\d{4})\b",
             sourceText,
             re.IGNORECASE,
         )

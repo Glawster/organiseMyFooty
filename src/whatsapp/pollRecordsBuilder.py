@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
+import re
+
 from attendanceConfig import RuntimeConfig
 from organiseMyProjects.logUtils import drawBox, getLogger  # type: ignore[import]
 from whatsapp.models import PollRecord
@@ -43,18 +46,22 @@ class PollRecordsBuilder:
 
         rawDateText = self.discovery.extractPollDateText(locator, sourceText)
         pollDateText = self.parser.normaliseDateText(rawDateText)
+        pollDateDisplay = self._formatDateDisplay(
+            pollDateText, fallbackText=rawDateText
+        )
         sessionDateText = self.parser.calculateSessionDateText(
             pollTitle=pollTitle,
             pollDateText=pollDateText,
         )
+        sessionDateDisplay = self._formatDateDisplay(sessionDateText)
 
         boxText = "\n".join(
             [
                 sourceText[:500].rstrip(),
                 "",
                 f"raw date:     {rawDateText}",
-                f"poll date:    {pollDateText}",
-                f"session date: {sessionDateText}",
+                f"poll date:    {pollDateDisplay}",
+                f"session date: {sessionDateDisplay}",
             ]
         )
 
@@ -77,6 +84,29 @@ class PollRecordsBuilder:
         )
         self.logger.value("poll vote rows", len(pollRecords))
         return pollRecords
+
+    ## display utilities
+
+    def _formatDateDisplay(self, text: str, fallbackText: str = "") -> str:
+        if not text:
+            return ""
+
+        try:
+            datePart = datetime.strptime(text[:8], "%Y%m%d").strftime("%d/%m/%Y")
+        except ValueError:
+            return text
+
+        sourceForTime = text if text else fallbackText
+        if fallbackText:
+            sourceForTime = f"{text} {fallbackText}".strip()
+
+        timeMatch = re.search(r"\b(\d{1,2}):(\d{2})\b", sourceForTime)
+        if not timeMatch:
+            return f"{datePart} 00:00"
+
+        hour = int(timeMatch.group(1))
+        minute = int(timeMatch.group(2))
+        return f"{datePart} {hour:02d}:{minute:02d}"
 
     ## record construction
 
