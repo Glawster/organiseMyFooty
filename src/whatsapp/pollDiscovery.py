@@ -64,7 +64,7 @@ class PollDiscovery:
 
     def extractPollDateText(self, locator, sourceText: str) -> str:
         textDate = self.parser.extractLikelyDateText(sourceText)
-        if textDate:
+        if textDate and self.parser.normaliseDateText(textDate):
             return textDate
 
         script = r"""

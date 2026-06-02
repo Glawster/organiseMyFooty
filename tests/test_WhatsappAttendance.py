@@ -15,6 +15,7 @@ from whatsapp.records import deduplicateRecords
 from whatsapp.cache import PollCacheStore
 from whatsapp.pollDiscovery import PollDiscovery
 from whatsapp.pollDialog import PollDialog
+from whatsapp.scraper import WhatsAppPollScraper
 from whatsapp.selectors import DEFAULT_SELECTORS
 from whatsapp.constants import POLL_CACHE_VERSION
 from whatsapp.exporter import AttendanceExporter
@@ -175,9 +176,11 @@ def test_save_poll_cache_logs_skip_in_dry_run(tmp_path):
     cache_store.savePollCache({"poll-1": [_record()]})
 
     assert cache_store.getPollCachePath().exists() is False
-    assert ("action", ("write poll cache: %s", cache_store.getPollCachePath()), {}) not in (
-        cache_store.logger.messages
-    )
+    assert (
+        "action",
+        ("write poll cache: %s", cache_store.getPollCachePath()),
+        {},
+    ) not in (cache_store.logger.messages)
     assert (
         "info",
         ("dry run: skipping poll cache write: %s", cache_store.getPollCachePath()),
@@ -233,7 +236,9 @@ def test_write_preview_json_logs_skip_in_dry_run(tmp_path):
     exporter = AttendanceExporter(config)
     preview_path = tmp_path / "exportPreview.json"
 
-    exporter.writePreviewJson(rawRows=[{"pollTitle": "Training"}], summaryRows=[], reportRows=[])
+    exporter.writePreviewJson(
+        rawRows=[{"pollTitle": "Training"}], summaryRows=[], reportRows=[]
+    )
 
     assert preview_path.exists() is False
     assert ("action", ("write preview json: %s", preview_path), {}) not in (
@@ -260,6 +265,9 @@ class StubItem:
 
     def locator(self, *_args, **_kwargs):
         raise RuntimeError
+
+    def evaluate(self, *_args, **_kwargs):
+        return ""
 
 
 class StubCollection:
@@ -295,6 +303,78 @@ def test_find_poll_cards():
 
     results = discovery.findPollCards(page)
     assert len(results) == 1
+
+
+def test_extract_poll_date_text_falls_back_to_dom_date_when_source_only_has_time():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+    item = StubItem("Training\n10:30\nYes")
+    item.evaluate = lambda *_args, **_kwargs: "01/03/2026"
+
+    assert discovery.extractPollDateText(item, item.text) == "01/03/2026"
+
+
+class StubDiscoveryWithVisiblePollDates:
+    def __init__(self, raw_dates_by_locator):
+        self.raw_dates_by_locator = raw_dates_by_locator
+
+    def extractPollSourceText(self, locator):
+        return str(locator)
+
+    def extractPollDateText(self, locator, sourceText: str) -> str:
+        return self.raw_dates_by_locator[sourceText]
+
+
+def test_should_stop_for_strict_lookback_uses_visible_poll_dates():
+    config = _make_config(
+        strictMonth=True,
+        monthWindow=MonthWindow(
+            monthKey="2026-05",
+            startDate=date(2026, 5, 1),
+            endDate=date(2026, 5, 31),
+        ),
+    )
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    scraper = WhatsAppPollScraper(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        cacheStore=PollCacheStore(config=config, parser=parser),
+    )
+    scraper.discovery = StubDiscoveryWithVisiblePollDates(
+        {
+            "poll-a": "23/04/2026",
+            "poll-b": "22/04/2026",
+        }
+    )
+
+    assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is True
+
+
+def test_should_not_stop_for_strict_lookback_when_visible_poll_reaches_cutoff():
+    config = _make_config(
+        strictMonth=True,
+        monthWindow=MonthWindow(
+            monthKey="2026-05",
+            startDate=date(2026, 5, 1),
+            endDate=date(2026, 5, 31),
+        ),
+    )
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    scraper = WhatsAppPollScraper(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        cacheStore=PollCacheStore(config=config, parser=parser),
+    )
+    scraper.discovery = StubDiscoveryWithVisiblePollDates(
+        {
+            "poll-a": "24/04/2026",
+            "poll-b": "22/04/2026",
+        }
+    )
+
+    assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is False
 
 
 # ---------------------------------------------------------------------------

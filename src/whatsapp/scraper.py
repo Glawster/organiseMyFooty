@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
-import re
 
 from attendanceConfig import RuntimeConfig
 from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
@@ -49,23 +48,18 @@ class WhatsAppPollScraper:
 
     ## date window helpers
 
-    def extractVisibleChatText(self, page) -> str:
-        try:
-            return page.locator(
-                '[data-testid="conversation-panel-messages"]'
-            ).first.inner_text(timeout=1000)
-        except Exception:
-            return ""
-
-    def extractVisibleChatDates(self, page) -> list[date]:
-        visibleText = self.extractVisibleChatText(page)
+    def extractVisiblePollDates(self, pollLocators: list) -> list[date]:
         visibleDates: list[date] = []
 
-        for match in re.finditer(r"\b\d{1,2}/\d{1,2}/\d{4}\b", visibleText):
+        for locator in pollLocators:
+            sourceText = self.discovery.extractPollSourceText(locator)
+            rawDateText = self.discovery.extractPollDateText(locator, sourceText)
+            pollDateText = self.parser.normaliseDateText(rawDateText)
+            if not pollDateText:
+                continue
+
             try:
-                visibleDates.append(
-                    datetime.strptime(match.group(0), "%d/%m/%Y").date()
-                )
+                visibleDates.append(datetime.strptime(pollDateText, "%Y%m%d").date())
             except ValueError:
                 continue
 
@@ -74,11 +68,11 @@ class WhatsAppPollScraper:
     def getStrictLookbackStartDate(self) -> date:
         return self.config.monthWindow.startDate - timedelta(days=7)
 
-    def shouldStopForStrictLookback(self, page) -> bool:
+    def shouldStopForStrictLookback(self, pollLocators: list) -> bool:
         if not self.config.strictMonth:
             return False
 
-        visibleDates = self.extractVisibleChatDates(page)
+        visibleDates = self.extractVisiblePollDates(pollLocators)
         if not visibleDates:
             return False
 
@@ -89,7 +83,7 @@ class WhatsAppPollScraper:
             return False
 
         self.logger.info(
-            "reached before strict lookback window: newest visible date %s, cutoff %s",
+            "reached before strict lookback window: newest visible poll date %s, cutoff %s",
             newestVisibleDate,
             lookbackStartDate,
         )
@@ -118,9 +112,6 @@ class WhatsAppPollScraper:
                 self.navigation.openGroup(page, self.config.groupName)
 
                 for scrollPass in range(120):
-                    if self.shouldStopForStrictLookback(page):
-                        break
-
                     pollLocators = self.discovery.findPollCards(page)
                     self.logger.info(
                         "candidate poll cards found: %s (scroll pass %s)",
@@ -171,6 +162,9 @@ class WhatsAppPollScraper:
                         )
 
                     if self.hasReachedPollLimit(pollCount):
+                        break
+
+                    if self.shouldStopForStrictLookback(pollLocators):
                         break
 
                     self.navigation.scrollChatHistory(page, scrollPasses=1)
