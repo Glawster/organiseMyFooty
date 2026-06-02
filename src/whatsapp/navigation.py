@@ -166,8 +166,10 @@ class WhatsAppNavigation:
             except Exception as exc:
                 self.logger.warning("Unable to scroll chat history: %s", exc)
 
-            if not result or not result.get("didScroll") or not result.get(
-                "usedPreferredTarget"
+            if (
+                not result
+                or not result.get("didScroll")
+                or not result.get("usedPreferredTarget")
             ):
                 page.mouse.wheel(0, -2500)
 
