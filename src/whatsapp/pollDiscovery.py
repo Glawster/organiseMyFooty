@@ -152,21 +152,32 @@ class PollDiscovery:
     def extractPollSourceText(self, locator) -> str:
         for selector in (
             "xpath=ancestor-or-self::*[contains(., 'Select one or more') and contains(., 'View votes')][1]",
-            "xpath=ancestor-or-self::*[contains(., 'View votes')][1]",
-            'xpath=ancestor-or-self::*[@data-testid][contains(@data-testid, "msg")][1]',
             "xpath=ancestor-or-self::*[@data-id][1]",
+            'xpath=ancestor-or-self::*[@data-testid][contains(@data-testid, "msg")][1]',
+            "xpath=ancestor-or-self::*[contains(., 'View votes')][1]",
         ):
             try:
                 text = locator.locator(selector).first.inner_text(timeout=1000)
-                if text.strip():
+                if self.isUsefulPollSourceText(text):
                     return text
             except Exception:
                 continue
 
         try:
-            return locator.inner_text(timeout=1000)
+            text = locator.inner_text(timeout=1000)
+            return text if self.isUsefulPollSourceText(text) else ""
         except Exception:
             return ""
+
+    def isUsefulPollSourceText(self, text: str) -> bool:
+        collapsed = " ".join(text.split()).strip().lower()
+        if not collapsed:
+            return False
+
+        if collapsed in {self.selectors.viewVotesText.lower(), "select one or more"}:
+            return False
+
+        return True
 
     def logVisiblePollText(self, page) -> None:
         try:

@@ -271,6 +271,26 @@ class StubItem:
         return ""
 
 
+class StubNestedLocator:
+    def __init__(self, text: str):
+        self.text = text
+        self.first = self
+
+    def inner_text(self, timeout=None):
+        return self.text
+
+
+class StubItemWithLocatorTexts(StubItem):
+    def __init__(self, text: str, locator_texts: dict[str, str]):
+        super().__init__(text)
+        self.locator_texts = locator_texts
+
+    def locator(self, selector, *_args, **_kwargs):
+        if selector in self.locator_texts:
+            return StubNestedLocator(self.locator_texts[selector])
+        raise RuntimeError
+
+
 class StubCollection:
     def __init__(self, texts):
         self.texts = texts
@@ -340,6 +360,25 @@ def test_extract_poll_date_text_falls_back_to_dom_date_when_source_only_has_time
     item.evaluate = lambda *_args, **_kwargs: "01/03/2026"
 
     assert discovery.extractPollDateText(item, item.text) == "01/03/2026"
+
+
+def test_extract_poll_source_text_prefers_message_container_over_view_votes_label():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+    item = StubItemWithLocatorTexts(
+        "View votes",
+        {
+            "xpath=ancestor-or-self::*[@data-id][1]": (
+                "Monday 7pm LLC\nSelect one or more\n01/03/2026\nView votes"
+            ),
+            "xpath=ancestor-or-self::*[contains(., 'View votes')][1]": "View votes",
+        },
+    )
+
+    assert (
+        discovery.extractPollSourceText(item)
+        == "Monday 7pm LLC\nSelect one or more\n01/03/2026\nView votes"
+    )
 
 
 class StubDiscoveryWithVisiblePollDates:
