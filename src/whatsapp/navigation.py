@@ -66,7 +66,7 @@ class WhatsAppNavigation:
             try:
                 banner = page.get_by_text(text, exact=False).first
                 if banner.is_visible(timeout=500):
-                    self.logger.info("loading older messages from phone")
+                    self.logger.debug("loading older messages from phone")
                     banner.click(timeout=2000)
                     page.wait_for_timeout(2500)
                     return True
@@ -133,7 +133,7 @@ class WhatsAppNavigation:
 
             try:
                 result = page.evaluate(script)
-                self.logger.info("chat scroll result: %s", result)
+                self.logger.debug("chat scroll result: %s", result)
             except Exception as exc:
                 self.logger.warning("Unable to scroll chat history: %s", exc)
 
