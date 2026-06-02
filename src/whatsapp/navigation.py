@@ -76,8 +76,6 @@ class WhatsAppNavigation:
         return False
 
     def scrollChatHistory(self, page, scrollPasses: int = 1) -> None:
-        self.logger.doing("scrolling chat history")
-
         script = """
         () => {
             const elements = Array.from(document.querySelectorAll('*'));
