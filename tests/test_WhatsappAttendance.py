@@ -15,6 +15,7 @@ from whatsapp.records import deduplicateRecords
 from whatsapp.cache import PollCacheStore
 from whatsapp.pollDiscovery import PollDiscovery
 from whatsapp.pollDialog import PollDialog
+from whatsapp.navigation import WhatsAppNavigation
 from whatsapp.scraper import WhatsAppPollScraper
 from whatsapp.selectors import DEFAULT_SELECTORS
 from whatsapp.constants import POLL_CACHE_VERSION
@@ -426,3 +427,61 @@ def test_close_dialog_falls_back_to_escape():
 
     dialog.closeDialog(page, None)
     assert "Escape" in page.pressed
+
+
+# ---------------------------------------------------------------------------
+# navigation
+# ---------------------------------------------------------------------------
+
+
+class FakeMouse:
+    def __init__(self):
+        self.wheels = []
+
+    def wheel(self, delta_x, delta_y):
+        self.wheels.append((delta_x, delta_y))
+
+
+class FakeNavigationPage:
+    def __init__(self, evaluate_result):
+        self.evaluate_result = evaluate_result
+        self.mouse = FakeMouse()
+
+    def get_by_text(self, *_args, **_kwargs):
+        return FakeControl(False)
+
+    def evaluate(self, *_args, **_kwargs):
+        return self.evaluate_result
+
+    def wait_for_timeout(self, *_args):
+        pass
+
+
+def test_scroll_chat_history_skips_mouse_wheel_when_preferred_panel_scrolls():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    page = FakeNavigationPage(
+        {
+            "didScroll": True,
+            "usedPreferredTarget": True,
+            "dataTestId": "conversation-panel-messages",
+        }
+    )
+
+    navigation.scrollChatHistory(page)
+
+    assert page.mouse.wheels == []
+
+
+def test_scroll_chat_history_falls_back_to_mouse_wheel_without_preferred_scroll():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    page = FakeNavigationPage(
+        {
+            "didScroll": False,
+            "usedPreferredTarget": False,
+            "dataTestId": "pane-side",
+        }
+    )
+
+    navigation.scrollChatHistory(page)
+
+    assert page.mouse.wheels == [(0, -2500)]
