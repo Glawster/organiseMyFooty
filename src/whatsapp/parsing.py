@@ -275,16 +275,14 @@ class PollTextParser:
 
     # ## text matching utilities
     def extractLikelyDateText(self, sourceText: str) -> str:
-        match = re.search(
+        dateMatch = re.search(
             r"\b(?:today|yesterday|\d{1,2}/\d{1,2}/\d{4})\b",
             sourceText,
             re.IGNORECASE,
         )
         if dateMatch:
             return dateMatch.group(0)
-
-        timeMatch = re.search(r"\b\d{1,2}:\d{2}\b", sourceText)
-        return timeMatch.group(0) if timeMatch else ""
+        return ""
 
     def extractLikelyTimeText(self, sourceText: str) -> str:
         match = re.search(r"\b\d{1,2}:\d{2}\b", sourceText)
