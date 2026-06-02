@@ -143,7 +143,7 @@ class WhatsAppPollScraper:
                     for locator in pollLocators:
                         sourceText = self.discovery.extractPollSourceText(locator)
                         messageKey = self.discovery.extractMessageKey(locator)
-                        key = messageKey or "|".join(sourceText.split())[:300]
+                        key = self.discovery.buildPollLocatorKey(messageKey, sourceText)
 
                         if key in seenPollKeys:
                             continue

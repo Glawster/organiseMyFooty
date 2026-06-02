@@ -53,7 +53,7 @@ class PollDiscovery:
                     continue
 
                 messageKey = self.extractMessageKey(item)
-                key = messageKey or "|".join(sourceText.split())[:300]
+                key = self.buildPollLocatorKey(messageKey, sourceText)
                 if key in seenKeys:
                     continue
 
@@ -124,29 +124,29 @@ class PollDiscovery:
         return locator
 
     def extractMessageKey(self, locator) -> str:
-        for selector in (
-            'xpath=ancestor-or-self::*[@data-testid][contains(@data-testid, "msg")][1]',
-            "xpath=ancestor-or-self::*[@data-id][1]",
+        for selector, attribute in (
+            ("xpath=ancestor-or-self::*[@data-id][1]", "data-id"),
+            (
+                'xpath=ancestor-or-self::*[@data-testid][contains(@data-testid, "msg")][1]',
+                "data-testid",
+            ),
         ):
             try:
                 value = locator.locator(selector).first.get_attribute(
-                    "data-testid", timeout=1000
+                    attribute, timeout=1000
                 )
                 if value:
                     return value
             except Exception:
-                pass
-
-            try:
-                value = locator.locator(selector).first.get_attribute(
-                    "data-id", timeout=1000
-                )
-                if value:
-                    return value
-            except Exception:
-                pass
+                continue
 
         return ""
+
+    def buildPollLocatorKey(self, messageKey: str, sourceText: str) -> str:
+        sourceKey = "|".join(sourceText.split())[:300]
+        if messageKey:
+            return f"{messageKey}|{sourceKey}"
+        return sourceKey
 
     def extractPollSourceText(self, locator) -> str:
         for selector in (

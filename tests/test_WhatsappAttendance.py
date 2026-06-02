@@ -306,6 +306,33 @@ def test_find_poll_cards():
     assert len(results) == 1
 
 
+class StubDiscoveryWithSharedMessageKey(PollDiscovery):
+    def extractMessageKey(self, locator) -> str:
+        return "msg-container"
+
+
+def test_find_poll_cards_keeps_distinct_polls_with_same_message_key():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    discovery = StubDiscoveryWithSharedMessageKey(
+        _make_config(), DEFAULT_SELECTORS, parser
+    )
+
+    page = StubPage(
+        {
+            'div[role="button"]:has-text("View votes")': StubCollection(
+                [
+                    "Monday 7pm LLC\nView votes",
+                    "Wednesday 8pm LLC\nView votes",
+                ]
+            ),
+        }
+    )
+
+    results = discovery.findPollCards(page)
+
+    assert len(results) == 2
+
+
 def test_extract_poll_date_text_falls_back_to_dom_date_when_source_only_has_time():
     parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
     discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
