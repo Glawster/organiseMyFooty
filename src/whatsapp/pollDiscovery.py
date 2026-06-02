@@ -158,18 +158,18 @@ class PollDiscovery:
         ):
             try:
                 text = locator.locator(selector).first.inner_text(timeout=1000)
-                if self.isUsefulPollSourceText(text):
+                if self.pollSourceTextIsUseful(text):
                     return text
             except Exception:
                 continue
 
         try:
             text = locator.inner_text(timeout=1000)
-            return text if self.isUsefulPollSourceText(text) else ""
+            return text if self.pollSourceTextIsUseful(text) else ""
         except Exception:
             return ""
 
-    def isUsefulPollSourceText(self, text: str) -> bool:
+    def pollSourceTextIsUseful(self, text: str) -> bool:
         collapsed = " ".join(text.split()).strip().lower()
         if not collapsed:
             return False
