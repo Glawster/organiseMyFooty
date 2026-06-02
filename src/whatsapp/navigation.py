@@ -164,7 +164,10 @@ class WhatsAppNavigation:
                 result = page.evaluate(script)
                 self.logger.debug("chat scroll result: %s", result)
             except Exception as exc:
-                self.logger.warning("Unable to scroll chat history: %s", exc)
+                self.logger.warning(
+                    "Unable to scroll chat history, falling back to mouse wheel: %s",
+                    exc,
+                )
 
             if (
                 not result
