@@ -132,11 +132,11 @@ class WhatsAppPollScraper:
                         )
 
                         self.logger.debug(
-                            "found poll",
+                            "found poll: %s",
                             pollTitle or sourceText[:50],
                         )
                         self.logger.debug(
-                            "last poll",
+                            "last poll: %s",
                             lastPollTitle or lastSourceText[:50],
                         )
 
