@@ -113,7 +113,7 @@ class WhatsAppPollScraper:
 
                 for scrollPass in range(120):
                     pollLocators = self.discovery.findPollCards(page)
-                    self.logger.debug(
+                    self.logger.info(
                         "candidate poll cards found: %s (scroll pass %s)",
                         len(pollLocators),
                         scrollPass + 1,
@@ -131,11 +131,11 @@ class WhatsAppPollScraper:
                             sourceText=lastSourceText
                         )
 
-                        self.logger.debug(
+                        self.logger.value(
                             "found poll",
                             pollTitle or sourceText[:50],
                         )
-                        self.logger.debug(
+                        self.logger.value(
                             "last poll",
                             lastPollTitle or lastSourceText[:50],
                         )

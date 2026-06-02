@@ -282,9 +282,11 @@ class PollTextParser:
         )
         if dateMatch:
             return dateMatch.group(0)
+        return ""
 
-        timeMatch = re.search(r"\b\d{1,2}:\d{2}\b", sourceText)
-        return timeMatch.group(0) if timeMatch else ""
+    def extractLikelyTimeText(self, sourceText: str) -> str:
+        match = re.search(r"\b\d{1,2}:\d{2}\b", sourceText)
+        return match.group(0) if match else ""
 
     def looksLikeSystemText(self, line: str) -> bool:
         lowered = line.lower().strip()

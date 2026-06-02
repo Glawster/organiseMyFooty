@@ -78,9 +78,9 @@ def test_deduplicate_records_removes_duplicates():
 # ---------------------------------------------------------------------------
 
 
-def test_extract_likely_date_text():
+def test_extract_likely_time_text():
     parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
-    assert parser.extractLikelyDateText("Training\n10:30\nYes") == "10:30"
+    assert parser.extractLikelyTimeText("Training\n10:30\nYes") == "10:30"
 
 
 def test_clean_voter_names():
@@ -325,7 +325,7 @@ class StubDiscoveryWithVisiblePollDates:
         return self.raw_dates_by_locator[sourceText]
 
 
-def test_should_stop_for_strict_lookback_uses_visible_poll_dates():
+def test_should_stop_for_strict_lookback_with_all_polls_before_cutoff():
     config = _make_config(
         strictMonth=True,
         monthWindow=MonthWindow(
@@ -351,7 +351,7 @@ def test_should_stop_for_strict_lookback_uses_visible_poll_dates():
     assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is True
 
 
-def test_should_not_stop_for_strict_lookback_when_visible_poll_reaches_cutoff():
+def test_should_not_stop_for_strict_lookback_when_any_poll_within_window():
     config = _make_config(
         strictMonth=True,
         monthWindow=MonthWindow(
