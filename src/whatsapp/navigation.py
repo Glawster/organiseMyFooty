@@ -130,7 +130,15 @@ class WhatsAppNavigation:
                 };
             }
 
-            const target = preferredTarget || scrollables[0].el;
+            const target = preferredTarget
+                ? {
+                    el: preferredTarget,
+                    dataTestId: preferredTarget.getAttribute('data-testid'),
+                    scrollHeight: preferredTarget.scrollHeight,
+                    clientHeight: preferredTarget.clientHeight,
+                    text: (preferredTarget.innerText || '').slice(0, 120),
+                }
+                : scrollables[0];
             const before = target.el.scrollTop;
             target.el.scrollTop = Math.max(0, before - 500);
 
