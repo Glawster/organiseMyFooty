@@ -6,6 +6,7 @@ from whatsapp.parsing import PollTextParser
 from whatsapp.selectors import WhatsAppSelectors
 
 logger = getLogger()
+MAX_SOURCE_KEY_LENGTH = 300
 
 
 class PollDiscovery:
@@ -143,7 +144,7 @@ class PollDiscovery:
         return ""
 
     def buildPollLocatorKey(self, messageKey: str, sourceText: str) -> str:
-        sourceKey = "|".join(sourceText.split())[:300]
+        sourceKey = "|".join(sourceText.split())[:MAX_SOURCE_KEY_LENGTH]
         if messageKey:
             return f"{messageKey}|{sourceKey}"
         return sourceKey
