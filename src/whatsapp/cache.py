@@ -120,9 +120,10 @@ class PollCacheStore:
             )
             return
 
-        self.logger.action("write poll cache: %s", cachePath)
         if self.config.dryRun:
+            self.logger.info("dry run: skipping poll cache write: %s", cachePath)
             return
+        self.logger.action("write poll cache: %s", cachePath)
 
         cachePath.parent.mkdir(parents=True, exist_ok=True)
         payload = {
