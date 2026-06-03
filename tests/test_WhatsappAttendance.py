@@ -368,6 +368,7 @@ def test_extract_poll_date_text_can_skip_dom_fallback():
     item = StubItem("Training\n10:30\nYes")
     item.evaluate = lambda *_args, **_kwargs: "01/03/2026"
 
+    assert discovery.extractPollDateText(item, item.text) == "01/03/2026"
     assert discovery.extractPollDateText(item, item.text, allowDomFallback=False) == ""
 
 
@@ -403,7 +404,7 @@ class StubDiscoveryWithVisiblePollDates:
         return self.raw_dates_by_locator[sourceText]
 
 
-class StubDiscoveryWithDomFallbackOnlyDates(StubDiscoveryWithVisiblePollDates):
+class StubDiscoveryWithOnlyDomFallbackDates(StubDiscoveryWithVisiblePollDates):
     def extractPollDateText(
         self, locator, sourceText: str, allowDomFallback: bool = True
     ) -> str:
@@ -480,7 +481,7 @@ def test_should_not_stop_for_strict_lookback_when_only_dom_fallback_dates_exist(
         parser=parser,
         cacheStore=PollCacheStore(config=config, parser=parser),
     )
-    scraper.discovery = StubDiscoveryWithDomFallbackOnlyDates(
+    scraper.discovery = StubDiscoveryWithOnlyDomFallbackDates(
         {
             "poll-a": "23/04/2026",
             "poll-b": "22/04/2026",
