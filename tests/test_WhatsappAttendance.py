@@ -362,6 +362,15 @@ def test_extract_poll_date_text_falls_back_to_dom_date_when_source_only_has_time
     assert discovery.extractPollDateText(item, item.text) == "01/03/2026"
 
 
+def test_extract_poll_date_text_can_skip_dom_fallback():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+    item = StubItem("Training\n10:30\nYes")
+    item.evaluate = lambda *_args, **_kwargs: "01/03/2026"
+
+    assert discovery.extractPollDateText(item, item.text, allowDomFallback=False) == ""
+
+
 def test_extract_poll_source_text_prefers_message_container_over_view_votes_label():
     parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
     discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
@@ -388,7 +397,11 @@ class StubDiscoveryWithVisiblePollDates:
     def extractPollSourceText(self, locator):
         return str(locator)
 
-    def extractPollDateText(self, locator, sourceText: str) -> str:
+    def extractPollDateText(
+        self, locator, sourceText: str, allowDomFallback: bool = True
+    ) -> str:
+        if not allowDomFallback:
+            return ""
         return self.raw_dates_by_locator[sourceText]
 
 
@@ -437,6 +450,32 @@ def test_should_not_stop_for_strict_lookback_when_any_poll_within_window():
     scraper.discovery = StubDiscoveryWithVisiblePollDates(
         {
             "poll-a": "24/04/2026",
+            "poll-b": "22/04/2026",
+        }
+    )
+
+    assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is False
+
+
+def test_should_not_stop_for_strict_lookback_when_only_dom_fallback_dates_exist():
+    config = _make_config(
+        strictMonth=True,
+        monthWindow=MonthWindow(
+            monthKey="2026-05",
+            startDate=date(2026, 5, 1),
+            endDate=date(2026, 5, 31),
+        ),
+    )
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    scraper = WhatsAppPollScraper(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        cacheStore=PollCacheStore(config=config, parser=parser),
+    )
+    scraper.discovery = StubDiscoveryWithVisiblePollDates(
+        {
+            "poll-a": "23/04/2026",
             "poll-b": "22/04/2026",
         }
     )

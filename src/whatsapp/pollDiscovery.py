@@ -63,10 +63,15 @@ class PollDiscovery:
 
         return pollLocators
 
-    def extractPollDateText(self, locator, sourceText: str) -> str:
+    def extractPollDateText(
+        self, locator, sourceText: str, allowDomFallback: bool = True
+    ) -> str:
         textDate = self.parser.extractLikelyDateText(sourceText)
         if textDate and self.parser.normaliseDateText(textDate):
             return textDate
+
+        if not allowDomFallback:
+            return ""
 
         script = r"""
         (node) => {

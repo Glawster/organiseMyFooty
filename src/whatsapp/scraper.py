@@ -53,7 +53,11 @@ class WhatsAppPollScraper:
 
         for locator in pollLocators:
             sourceText = self.discovery.extractPollSourceText(locator)
-            rawDateText = self.discovery.extractPollDateText(locator, sourceText)
+            rawDateText = self.discovery.extractPollDateText(
+                locator,
+                sourceText,
+                allowDomFallback=False,
+            )
             pollDateText = self.parser.normaliseDateText(rawDateText)
             if not pollDateText:
                 continue
