@@ -34,12 +34,14 @@ class PollTextParser:
         except ValueError:
             return ""
 
-        targetWeekday = WEEKDAY_MAP[sessionWeekday]
-        daysForward = (targetWeekday - pollDate.weekday()) % 7
-        if daysForward == 0:
-            daysForward = 7
+        sessionDate = self.extractExplicitSessionDate(pollTitle, pollDate)
+        if sessionDate is None:
+            targetWeekday = WEEKDAY_MAP[sessionWeekday]
+            daysForward = (targetWeekday - pollDate.weekday()) % 7
+            if daysForward == 0:
+                daysForward = 7
 
-        sessionDate = pollDate + timedelta(days=daysForward)
+            sessionDate = pollDate + timedelta(days=daysForward)
         timeText, _venueText = self.extractSessionParts(pollTitle)
 
         return f"{sessionDate.strftime('%Y%m%d')} {timeText}"
@@ -154,6 +156,31 @@ class PollTextParser:
             re.IGNORECASE,
         )
         return match.group(1).lower() if match else ""
+
+    def extractExplicitSessionDate(
+        self, pollTitle: str, pollDate: datetime
+    ) -> datetime | None:
+        match = re.search(
+            r"\b(?P<day>\d{1,2})(?:st|nd|rd|th)?\s+"
+            r"(?P<month>january|february|march|april|may|june|july|august|"
+            r"september|october|november|december)\b",
+            pollTitle,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+
+        day = int(match.group("day"))
+        monthName = match.group("month").lower()
+        month = datetime.strptime(monthName, "%B").month
+        year = pollDate.year
+        if month < pollDate.month:
+            year += 1
+
+        try:
+            return pollDate.replace(year=year, month=month, day=day)
+        except ValueError:
+            return None
 
     def extractPollTitle(self, dialog=None, sourceText: str = "") -> str:
         ignoredLines = {

@@ -102,6 +102,17 @@ def test_is_session_in_month_window_returns_false_for_out_of_month_strict():
     assert parser.isSessionInMonthWindow("20260406 19:00") is False
 
 
+def test_calculate_session_date_text_prefers_explicit_date_in_title():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+
+    assert (
+        parser.calculateSessionDateText(
+            "Friday 12th June NIWFF club tournament", "20260511"
+        )
+        == "20260612 00:00"
+    )
+
+
 class StubDiscoveryWithDate:
     def __init__(self, raw_date_text: str):
         self.raw_date_text = raw_date_text
@@ -149,6 +160,33 @@ def test_build_poll_records_from_dialog_keeps_out_of_month_when_not_strict():
 
     assert len(records) == 1
     assert records[0].sessionDateText == "20260406 19:00"
+
+
+def test_build_poll_records_from_dialog_skips_explicit_future_month_when_strict():
+    config = _make_config(
+        strictMonth=True,
+        monthWindow=MonthWindow(
+            monthKey="2026-05",
+            startDate=date(2026, 5, 1),
+            endDate=date(2026, 5, 31),
+        ),
+    )
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    builder = PollRecordsBuilder(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        discovery=StubDiscoveryWithDate("11/05/2026"),
+    )
+
+    records = builder.buildPollRecordsFromDialog(
+        locator=None,
+        dialog=None,
+        dialogText="Friday 12th June NIWFF club tournament\nYes\nAlice",
+        sourceText="Friday 12th June NIWFF club tournament\nView votes",
+    )
+
+    assert records == []
 
 
 def test_poll_cache_payload_respects_strict_mode():
@@ -568,6 +606,36 @@ class FakeNavigationPage:
 
     def wait_for_timeout(self, *_args):
         pass
+
+
+def test_scroll_chat_to_latest_skips_mouse_wheel_when_preferred_panel_scrolls():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    page = FakeNavigationPage(
+        {
+            "didScroll": True,
+            "usedPreferredTarget": True,
+            "dataTestId": "conversation-panel-messages",
+        }
+    )
+
+    navigation.scrollChatToLatest(page)
+
+    assert page.mouse.wheels == []
+
+
+def test_scroll_chat_to_latest_falls_back_to_mouse_wheel_without_preferred_panel():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    page = FakeNavigationPage(
+        {
+            "didScroll": False,
+            "usedPreferredTarget": False,
+            "reason": "no preferred target",
+        }
+    )
+
+    navigation.scrollChatToLatest(page)
+
+    assert page.mouse.wheels == [(0, 2500)]
 
 
 def test_scroll_chat_history_skips_mouse_wheel_when_preferred_panel_scrolls():

@@ -58,6 +58,77 @@ class WhatsAppNavigation:
         candidate.click(timeout=self.config.timeoutMs)
         self.logger.info("group opened")
 
+    def scrollChatToLatest(self, page) -> None:
+        script = """
+        () => {
+            const isScrollable = (el) => {
+                if (!el) {
+                    return false;
+                }
+
+                const style = window.getComputedStyle(el);
+                const canScroll =
+                    ['auto', 'scroll'].includes(style.overflowY) ||
+                    ['auto', 'scroll'].includes(style.overflow);
+
+                return canScroll && el.scrollHeight > el.clientHeight + 200;
+            };
+
+            const findScrollableAncestor = (el) => {
+                let current = el;
+                while (current) {
+                    if (isScrollable(current)) {
+                        return current;
+                    }
+                    current = current.parentElement;
+                }
+                return null;
+            };
+
+            const preferredPanel = document.querySelector(
+                '[data-testid="conversation-panel-messages"]'
+            );
+            const preferredTarget = findScrollableAncestor(preferredPanel);
+
+            if (!preferredTarget) {
+                return {
+                    didScroll: false,
+                    usedPreferredTarget: false,
+                    reason: 'no preferred target',
+                };
+            }
+
+            const before = preferredTarget.scrollTop;
+            preferredTarget.scrollTop = preferredTarget.scrollHeight;
+
+            return {
+                didScroll: preferredTarget.scrollTop !== before,
+                before,
+                after: preferredTarget.scrollTop,
+                scrollHeight: preferredTarget.scrollHeight,
+                clientHeight: preferredTarget.clientHeight,
+                dataTestId: preferredTarget.getAttribute('data-testid'),
+                usedPreferredTarget: true,
+                text: (preferredTarget.innerText || '').slice(0, 120),
+            };
+        }
+        """
+
+        result = None
+        try:
+            result = page.evaluate(script)
+            self.logger.debug("chat jump-to-latest result: %s", result)
+        except Exception as exc:
+            self.logger.warning(
+                "Unable to jump chat to latest, falling back to mouse wheel: %s",
+                exc,
+            )
+
+        if not result or not result.get("usedPreferredTarget"):
+            page.mouse.wheel(0, 2500)
+
+        page.wait_for_timeout(1200)
+
     def clickOlderMessagesBanner(self, page) -> bool:
         for text in (
             "Click here to get older messages from your phone",

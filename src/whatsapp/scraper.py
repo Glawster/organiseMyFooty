@@ -114,6 +114,7 @@ class WhatsAppPollScraper:
                 page.goto(self.selectors.webUrl)
                 self.navigation.waitForWhatsAppReady(page)
                 self.navigation.openGroup(page, self.config.groupName)
+                self.navigation.scrollChatToLatest(page)
 
                 for scrollPass in range(120):
                     pollLocators = self.discovery.findPollCards(page)
