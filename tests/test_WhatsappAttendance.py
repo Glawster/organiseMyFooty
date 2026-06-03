@@ -400,6 +400,13 @@ class StubDiscoveryWithVisiblePollDates:
     def extractPollDateText(
         self, locator, sourceText: str, allowDomFallback: bool = True
     ) -> str:
+        return self.raw_dates_by_locator[sourceText]
+
+
+class StubDiscoveryWithDomFallbackOnlyDates(StubDiscoveryWithVisiblePollDates):
+    def extractPollDateText(
+        self, locator, sourceText: str, allowDomFallback: bool = True
+    ) -> str:
         if not allowDomFallback:
             return ""
         return self.raw_dates_by_locator[sourceText]
@@ -421,7 +428,7 @@ def test_should_stop_for_strict_lookback_with_all_polls_before_cutoff():
         parser=parser,
         cacheStore=PollCacheStore(config=config, parser=parser),
     )
-    scraper.discovery = StubDiscoveryWithVisiblePollDates(
+    scraper.discovery = StubDiscoveryWithDomFallbackOnlyDates(
         {
             "poll-a": "23/04/2026",
             "poll-b": "22/04/2026",
