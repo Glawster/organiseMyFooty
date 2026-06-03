@@ -428,7 +428,7 @@ def test_should_stop_for_strict_lookback_with_all_polls_before_cutoff():
         parser=parser,
         cacheStore=PollCacheStore(config=config, parser=parser),
     )
-    scraper.discovery = StubDiscoveryWithDomFallbackOnlyDates(
+    scraper.discovery = StubDiscoveryWithVisiblePollDates(
         {
             "poll-a": "23/04/2026",
             "poll-b": "22/04/2026",
@@ -480,7 +480,7 @@ def test_should_not_stop_for_strict_lookback_when_only_dom_fallback_dates_exist(
         parser=parser,
         cacheStore=PollCacheStore(config=config, parser=parser),
     )
-    scraper.discovery = StubDiscoveryWithVisiblePollDates(
+    scraper.discovery = StubDiscoveryWithDomFallbackOnlyDates(
         {
             "poll-a": "23/04/2026",
             "poll-b": "22/04/2026",
