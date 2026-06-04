@@ -11,6 +11,7 @@ import re
 import time
 
 from attendanceConfig import RuntimeConfig, writeCsv
+from socialMediaSummary import buildSocialMediaSummaryFromAttendanceReport
 from whatsappSelectors import DEFAULT_SELECTORS, WhatsAppSelectors
 
 from organiseMyProjects.logUtils import getLogger, drawBox  # type: ignore[import]
@@ -96,9 +97,11 @@ class AttendanceExporter:
             "write attendanceReport.csv rows: %s", max(0, len(reportRows) - 3)
         )
         if not self.config.dryRun:
-            self.writeAttendanceReportCsv(
-                self.config.outputDir / "attendanceReport.csv",
-                reportRows,
+            attendanceReportPath = self.config.outputDir / "attendanceReport.csv"
+            self.writeAttendanceReportCsv(attendanceReportPath, reportRows)
+            self.writeSocialMediaSummary(
+                attendanceReportPath,
+                self.config.outputDir / "socialMediaSummary.txt",
             )
 
         self.writePreviewJson(rawRows, summaryRows, reportRows)
@@ -130,6 +133,11 @@ class AttendanceExporter:
         with path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
             writer.writerows(rows)
+
+    def writeSocialMediaSummary(self, sourcePath: Path, outputPath: Path) -> None:
+        summaryText = buildSocialMediaSummaryFromAttendanceReport(sourcePath)
+        self.logger.action("write social media summary: %s", outputPath)
+        outputPath.write_text(summaryText, encoding="utf-8")
 
     def extractSessionWeekday(self, pollTitle: str) -> str:
         match = re.match(
