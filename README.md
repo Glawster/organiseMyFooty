@@ -93,6 +93,8 @@ python exportAttendance.py --group "My Footy Group" --month 2026-03 --confirm
 |---|---|
 | `polls.csv` | Raw poll rows: `pollTitle`, `pollDateText`, `option`, `voterName`, `sourceHint` |
 | `attendanceSummary.csv` | Aggregated summary: `name`, `yesCount`, `noCount`, `totalVotes`, `pollsResponded` |
+| `attendanceReport.csv` | Session-by-session matrix used for month attendance reporting |
+| `socialMediaSummary.txt` | Paste-ready monthly attendance summary generated from `attendanceReport.csv` |
 | `exportPreview.json` | JSON preview of both datasets for quick inspection |
 
 ## Development
