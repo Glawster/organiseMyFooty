@@ -113,6 +113,21 @@ def test_calculate_session_date_text_prefers_explicit_date_in_title():
     )
 
 
+def test_calculate_session_date_text_accepts_session_prefix():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+
+    assert (
+        parser.calculateSessionDateText("Session Sunday 7pm", "20260501")
+        == "20260503 19:00"
+    )
+
+
+def test_is_valid_session_poll_accepts_session_prefix():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+
+    assert parser.isValidSessionPoll("Session Wednesday 11am") is True
+
+
 class StubDiscoveryWithDate:
     def __init__(self, raw_date_text: str):
         self.raw_date_text = raw_date_text
@@ -527,6 +542,35 @@ def test_should_not_stop_for_strict_lookback_when_only_dom_fallback_dates_exist(
     )
 
     assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is False
+
+
+def test_build_scraped_poll_key_uses_source_hint_when_date_only_comes_from_dom():
+    parser = PollTextParser(_make_config(strictMonth=True), DEFAULT_SELECTORS)
+    scraper = WhatsAppPollScraper(
+        config=_make_config(strictMonth=True),
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        cacheStore=PollCacheStore(config=_make_config(strictMonth=True), parser=parser),
+    )
+    poll_record = PollRecord(
+        pollTitle="Tuesday 10.30am LLC",
+        pollDateText="20260504",
+        sessionDateText="20260505 10:30",
+        option="Yes",
+        voterName="Alice",
+        sourceHint="",
+    )
+    source_text = (
+        "Tuesday 10.30am LLC\nSelect one or more\nYes\n18\nNo\n14\n08:39\nView votes"
+    )
+
+    poll_key = scraper.buildScrapedPollKey(
+        sourceText=source_text,
+        pollRecord=poll_record,
+        fallbackPollKey="fallback-key",
+    )
+
+    assert poll_key == f"{poll_record.pollTitle}|{source_text[:80]}"
 
 
 # ---------------------------------------------------------------------------

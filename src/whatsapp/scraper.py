@@ -238,10 +238,10 @@ class WhatsAppPollScraper:
             if not pollRecords:
                 return 0
 
-            pollKey = self.parser.buildPollKeyFromParts(
-                pollTitle=pollRecords[0].pollTitle,
-                pollDateText=pollRecords[0].pollDateText,
-                sourceHint=sourceText[:240],
+            pollKey = self.buildScrapedPollKey(
+                sourceText=sourceText,
+                pollRecord=pollRecords[0],
+                fallbackPollKey=pollKey,
             )
             recordsByPollKey[pollKey] = deduplicateRecords(pollRecords)
             return 1
@@ -274,6 +274,29 @@ class WhatsAppPollScraper:
                 self.config.pollTitleFilter,
             )
         return shouldSkip
+
+    def sourceTextHasStablePollDate(self, sourceText: str) -> bool:
+        rawDateText = self.parser.extractLikelyDateText(sourceText)
+        return bool(self.parser.normaliseDateText(rawDateText))
+
+    def buildScrapedPollKey(
+        self, sourceText: str, pollRecord: PollRecord, fallbackPollKey: str
+    ) -> str:
+        if self.sourceTextHasStablePollDate(sourceText):
+            return self.parser.buildPollKeyFromParts(
+                pollTitle=pollRecord.pollTitle,
+                pollDateText=pollRecord.pollDateText,
+                sourceHint=sourceText[:240],
+            )
+
+        return (
+            self.parser.buildPollKeyFromParts(
+                pollTitle=pollRecord.pollTitle,
+                pollDateText="",
+                sourceHint=sourceText[:240],
+            )
+            or fallbackPollKey
+        )
 
     ## logging helpers
 

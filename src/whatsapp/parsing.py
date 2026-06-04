@@ -17,6 +17,8 @@ WEEKDAY_MAP = {
     "sunday": 6,
 }
 
+SESSION_TITLE_PREFIX = r"(?:session\s+)?"
+
 
 class PollTextParser:
     def __init__(self, config: RuntimeConfig, selectors: WhatsAppSelectors):
@@ -123,7 +125,7 @@ class PollTextParser:
         Example: "Sunday 7pm LLC" -> ("19:00", "LLC")
         """
         match = re.match(
-            r"^(?P<day>\w+)\s+(?P<hour>\d{1,2})(?:[:\.](?P<min>\d{2}))?\s*(?P<ampm>am|pm)\s*(?P<venue>.*)$",
+            rf"^{SESSION_TITLE_PREFIX}(?P<day>\w+)\s+(?P<hour>\d{{1,2}})(?:[:\.](?P<min>\d{{2}}))?\s*(?P<ampm>am|pm)\s*(?P<venue>.*)$",
             pollTitle.strip(),
             re.IGNORECASE,
         )
@@ -151,7 +153,7 @@ class PollTextParser:
 
     def extractSessionWeekday(self, pollTitle: str) -> str:
         match = re.match(
-            r"^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+            rf"^{SESSION_TITLE_PREFIX}(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
             pollTitle.strip(),
             re.IGNORECASE,
         )
@@ -230,7 +232,7 @@ class PollTextParser:
     def isValidSessionPoll(self, pollTitle: str) -> bool:
         return bool(
             re.match(
-                r"^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+                rf"^{SESSION_TITLE_PREFIX}(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
                 pollTitle.strip(),
                 re.IGNORECASE,
             )
