@@ -305,7 +305,7 @@ class PollTextParser:
 
     # ## text matching utilities
     def extractLikelyDateText(self, sourceText: str) -> str:
-        for line in [line.strip() for line in sourceText.splitlines() if line.strip()]:
+        for line in (line.strip() for line in sourceText.splitlines() if line.strip()):
             lineMatch = re.match(
                 r"^(?:posted\s+)?"
                 r"(?P<date>"
