@@ -77,8 +77,8 @@ class PollDiscovery:
         (node) => {
             const isDateText = (value) => {
                 const text = (value || "").trim();
-                return /^(today|yesterday)$/i.test(text)
-                    || /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(text);
+                return /^(today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(text)
+                    || /^\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4})$/.test(text);
             };
 
             const nodeRect = node.getBoundingClientRect();

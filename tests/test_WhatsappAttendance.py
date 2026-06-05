@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
 
 from attendanceConfig import MonthWindow, RuntimeConfig
 
@@ -425,6 +425,34 @@ def test_extract_poll_date_text_can_skip_dom_fallback():
     assert discovery.extractPollDateText(item, item.text, allowDomFallback=False) == ""
 
 
+def test_extract_poll_date_text_reads_short_year_date_from_source_text():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+
+    assert (
+        discovery.extractPollDateText(None, "Posted 1/5/26\nSession Sunday 7pm")
+        == "1/5/26"
+    )
+    assert parser.normaliseDateText("1/5/26") == "20260501"
+
+
+def test_extract_poll_date_text_reads_weekday_date_from_source_text(monkeypatch):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 6, 5)
+
+    monkeypatch.setattr("whatsapp.parsing.datetime", FixedDateTime)
+
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+
+    assert discovery.extractPollDateText(None, "Posted Friday\nSession Sunday 7pm") == (
+        "Friday"
+    )
+    assert parser.normaliseDateText("Friday") == "20260529"
+
+
 def test_extract_poll_source_text_prefers_message_container_over_view_votes_label():
     parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
     discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
@@ -571,6 +599,73 @@ def test_build_scraped_poll_key_uses_source_hint_when_date_only_comes_from_dom()
     )
 
     assert poll_key == f"{poll_record.pollTitle}|{source_text[:80]}"
+
+
+def test_build_poll_records_from_dialog_keeps_short_year_source_dates_when_strict():
+    config = _make_config(
+        strictMonth=True,
+        monthWindow=MonthWindow(
+            monthKey="2026-05",
+            startDate=date(2026, 5, 1),
+            endDate=date(2026, 5, 31),
+        ),
+    )
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    builder = PollRecordsBuilder(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        discovery=PollDiscovery(config, DEFAULT_SELECTORS, parser),
+    )
+
+    records = builder.buildPollRecordsFromDialog(
+        locator=None,
+        dialog=None,
+        dialogText="Session Sunday 7pm\nYes\nAlice",
+        sourceText="Posted 1/5/26\nSession Sunday 7pm\nView votes",
+    )
+
+    assert len(records) == 1
+    assert records[0].pollDateText == "20260501"
+    assert records[0].sessionDateText == "20260503 19:00"
+
+
+def test_build_poll_records_from_dialog_keeps_weekday_source_dates_when_strict(
+    monkeypatch,
+):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 6, 5)
+
+    monkeypatch.setattr("whatsapp.parsing.datetime", FixedDateTime)
+
+    config = _make_config(
+        strictMonth=True,
+        monthWindow=MonthWindow(
+            monthKey="2026-05",
+            startDate=date(2026, 5, 1),
+            endDate=date(2026, 5, 31),
+        ),
+    )
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    builder = PollRecordsBuilder(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        discovery=PollDiscovery(config, DEFAULT_SELECTORS, parser),
+    )
+
+    records = builder.buildPollRecordsFromDialog(
+        locator=None,
+        dialog=None,
+        dialogText="Session Sunday 7pm\nYes\nAlice",
+        sourceText="Posted Friday\nSession Sunday 7pm\nView votes",
+    )
+
+    assert len(records) == 1
+    assert records[0].pollDateText == "20260529"
+    assert records[0].sessionDateText == "20260531 19:00"
 
 
 # ---------------------------------------------------------------------------

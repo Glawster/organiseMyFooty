@@ -76,13 +76,14 @@ class PollTextParser:
         if not text:
             return ""
 
-        dateMatch = re.search(r"\b(\d{1,2}/\d{1,2}/\d{4})\b", text)
+        dateMatch = re.search(r"\b(\d{1,2}/\d{1,2}/(?:\d{2}|\d{4}))\b", text)
         if dateMatch:
-            try:
-                dt = datetime.strptime(dateMatch.group(1), "%d/%m/%Y")
-                return dt.strftime("%Y%m%d")
-            except ValueError:
-                pass
+            for fmt in ("%d/%m/%Y", "%d/%m/%y"):
+                try:
+                    dt = datetime.strptime(dateMatch.group(1), fmt)
+                    return dt.strftime("%Y%m%d")
+                except ValueError:
+                    continue
 
         today = datetime.now()
         if text.startswith("today"):
@@ -304,8 +305,23 @@ class PollTextParser:
 
     # ## text matching utilities
     def extractLikelyDateText(self, sourceText: str) -> str:
+        for line in [line.strip() for line in sourceText.splitlines() if line.strip()]:
+            lineMatch = re.match(
+                r"^(?:posted\s+)?"
+                r"(?P<date>"
+                r"today|yesterday|"
+                r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
+                r"\d{1,2}/\d{1,2}/(?:\d{2}|\d{4})"
+                r")"
+                r"(?:\s+at\b.*)?$",
+                line,
+                re.IGNORECASE,
+            )
+            if lineMatch:
+                return lineMatch.group("date")
+
         dateMatch = re.search(
-            r"\b(?:today|yesterday|\d{1,2}/\d{1,2}/\d{4})\b",
+            r"\b(?:today|yesterday|\d{1,2}/\d{1,2}/(?:\d{2}|\d{4}))\b",
             sourceText,
             re.IGNORECASE,
         )
