@@ -349,4 +349,4 @@ class WhatsAppPollScraper:
             return
 
         self.logger.info("poll %s/%s: %s", index, totalPolls, pollTitle)
-        self.logger.doing("opening poll")
+        self.logger.doing("getting poll data")
