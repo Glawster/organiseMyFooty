@@ -40,7 +40,7 @@ class AttendanceExporter:
         self.logger.doing("attendance export")
         self.logger.info("starting export for group: %s", self.config.groupName)
         self.logger.info("month window: %s", self.config.monthWindow.monthKey)
-        self.logger.info("polls filtered to month window")
+        self.logger.info("only including polls within month window")
         self.logger.info("output dir: %s", self.config.outputDir)
 
         records = self.pollScraper.collectPollAttendance()

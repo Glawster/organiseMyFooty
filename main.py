@@ -171,6 +171,7 @@ def buildConfig(args: argparse.Namespace, dryRun: bool) -> Config:
     outputDir = ensureOutputDir(defaultOutputDir(args.groupName, monthWindow))
     userDataDir = ensureOutputDir(defaultUserDataDir())
 
+    # strictMonth defaults to True in RuntimeConfig.
     runtime = RuntimeConfig(
         groupName=args.groupName,
         monthWindow=monthWindow,
