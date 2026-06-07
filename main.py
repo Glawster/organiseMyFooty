@@ -184,7 +184,6 @@ def buildConfig(args: argparse.Namespace, dryRun: bool) -> Config:
         includeNoVotes=False,
         resume=False,
         pollTitleFilter=None,
-        strictMonth=True,
     )
 
     return Config(runtime=runtime)
