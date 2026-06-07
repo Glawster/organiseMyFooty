@@ -84,8 +84,39 @@ class PollDiscovery:
                     || /^\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4})$/.test(text);
             };
 
-            const nodeRect = node.getBoundingClientRect();
-            const candidates = Array.from(document.querySelectorAll("span, div"))
+            const collectDateTexts = (root) => {
+                const values = [];
+                const seen = new Set();
+                const add = (value) => {
+                    const text = (value || "").trim();
+                    if (!isDateText(text) || seen.has(text)) {
+                        return;
+                    }
+                    seen.add(text);
+                    values.push(text);
+                };
+
+                add(root?.innerText || root?.textContent || "");
+                for (const el of root?.querySelectorAll?.("span, div") || []) {
+                    add(el.innerText || el.textContent || "");
+                }
+                return values;
+            };
+
+            const messageNode = node.closest('[data-id], [data-testid*="msg"]') || node;
+            const messageRect = messageNode.getBoundingClientRect();
+            const previousSiblingDates = [];
+            let sibling = messageNode.previousElementSibling;
+            while (sibling && previousSiblingDates.length < 4) {
+                const siblingDates = collectDateTexts(sibling);
+                if (siblingDates.length) {
+                    previousSiblingDates.push(...siblingDates);
+                    break;
+                }
+                sibling = sibling.previousElementSibling;
+            }
+
+            const precedingVisibleDates = Array.from(document.querySelectorAll("span, div"))
                 .map((el) => {
                     const text = (el.innerText || el.textContent || "").trim();
                     if (!isDateText(text)) {
@@ -102,18 +133,37 @@ class PollDiscovery:
                     };
                 })
                 .filter(Boolean)
-                .filter((item) => item.bottom <= nodeRect.top + 5)
+                .filter((item) => item.bottom <= messageRect.top + 5)
                 .sort((a, b) => b.bottom - a.bottom);
 
-            return candidates.length ? candidates[0].text : "";
+            return {
+                previousSiblingDates,
+                precedingVisibleDates: precedingVisibleDates.map((item) => item.text),
+            };
         }
         """
 
         try:
-            return str(locator.evaluate(script, timeout=1000) or "")
+            return self.selectDomFallbackDate(locator.evaluate(script, timeout=1000))
         except Exception as exc:
             self.logger.warning("Unable to derive poll date: %s", exc)
             return ""
+
+    def selectDomFallbackDate(self, payload) -> str:
+        if isinstance(payload, str):
+            return payload
+
+        if not isinstance(payload, dict):
+            return ""
+
+        for key in ("previousSiblingDates", "precedingVisibleDates"):
+            values = payload.get(key) or []
+            for value in values:
+                text = str(value or "").strip()
+                if text:
+                    return text
+
+        return ""
 
     ## locator helpers
     def resolvePollButton(self, locator):

@@ -461,6 +461,30 @@ def test_extract_poll_date_text_can_skip_dom_fallback():
     assert discovery.extractPollDateText(item, item.text, allowDomFallback=False) == ""
 
 
+def test_extract_poll_date_text_prefers_previous_sibling_date_over_later_visible_date():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+    item = StubItem("Sunday 7pm football factory\n12:18\nView votes")
+    item.evaluate = lambda *_args, **_kwargs: {
+        "previousSiblingDates": ["09/05/2026"],
+        "precedingVisibleDates": ["11/05/2026"],
+    }
+
+    assert discovery.extractPollDateText(item, item.text) == "09/05/2026"
+
+
+def test_extract_poll_date_text_uses_visible_date_when_no_previous_sibling_date_exists():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+    item = StubItem("Tuesday 10.30am LLC\n08:39\nView votes")
+    item.evaluate = lambda *_args, **_kwargs: {
+        "previousSiblingDates": [],
+        "precedingVisibleDates": ["11/05/2026"],
+    }
+
+    assert discovery.extractPollDateText(item, item.text) == "11/05/2026"
+
+
 def test_extract_poll_date_text_reads_short_year_date_from_source_text():
     parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
     discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
