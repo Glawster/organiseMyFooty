@@ -195,6 +195,8 @@ class PollDiscovery:
         """Return nearby DOM text/attributes for a poll button when normal extraction fails."""
         script = r"""
         (node) => {
+            // Capture unique text and key attributes from the nearest message container
+            // and its ancestors so skipped poll candidates leave useful diagnostics.
             const collected = [];
             const seen = new Set();
             const add = (value) => {
@@ -221,10 +223,10 @@ class PollDiscovery:
 
             for (const el of targets) {
                 add(el.innerText || el.textContent || "");
-                add(el.getAttribute && el.getAttribute("aria-label"));
-                add(el.getAttribute && el.getAttribute("title"));
-                add(el.getAttribute && el.getAttribute("data-testid"));
-                add(el.getAttribute && el.getAttribute("data-id"));
+                add(el.getAttribute("aria-label"));
+                add(el.getAttribute("title"));
+                add(el.getAttribute("data-testid"));
+                add(el.getAttribute("data-id"));
             }
 
             return collected.join("\n");
