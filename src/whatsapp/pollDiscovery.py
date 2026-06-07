@@ -175,8 +175,8 @@ class PollDiscovery:
             text = locator.inner_text(timeout=1000)
             if self.pollSourceTextIsUseful(text):
                 return text
-        except Exception:
-            pass
+        except Exception as exc:
+            self.logger.debug("Unable to read poll source text from locator: %s", exc)
 
         text = self.extractPollDomDebugText(locator)
         return text if self.pollSourceTextIsUseful(text) else ""
@@ -192,6 +192,7 @@ class PollDiscovery:
         return True
 
     def extractPollDomDebugText(self, locator) -> str:
+        """Return nearby DOM text/attributes for a poll button when normal extraction fails."""
         script = r"""
         (node) => {
             const collected = [];
@@ -213,7 +214,7 @@ class PollDiscovery:
             }
 
             let current = node;
-            for (let depth = 0; current && depth < %s; depth += 1) {
+            for (let depth = 0; current && depth < __MAX_DOM_DEBUG_ANCESTOR_DEPTH__; depth += 1) {
                 targets.push(current);
                 current = current.parentElement;
             }
@@ -228,7 +229,11 @@ class PollDiscovery:
 
             return collected.join("\n");
         }
-        """ % MAX_DOM_DEBUG_ANCESTOR_DEPTH
+        """
+        script = script.replace(
+            "__MAX_DOM_DEBUG_ANCESTOR_DEPTH__",
+            str(MAX_DOM_DEBUG_ANCESTOR_DEPTH),
+        )
 
         try:
             return str(locator.evaluate(script, timeout=1000) or "")
@@ -236,6 +241,7 @@ class PollDiscovery:
             return ""
 
     def logSkippedPollCandidate(self, locator) -> None:
+        """Log a compact DOM snapshot when a visible poll candidate has no usable source text."""
         debugText = self.extractPollDomDebugText(locator)
         if debugText:
             self.logger.info(

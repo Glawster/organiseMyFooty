@@ -353,8 +353,18 @@ class StubCollection:
         return len(self.texts)
 
     def nth(self, index):
-        item = self.texts[index]
-        return item if isinstance(item, StubItem) else StubItem(item)
+        return StubItem(self.texts[index])
+
+
+class StubItemCollection:
+    def __init__(self, items):
+        self.items = items
+
+    def count(self):
+        return len(self.items)
+
+    def nth(self, index):
+        return self.items[index]
 
 
 class StubPage:
@@ -494,7 +504,7 @@ def test_find_poll_cards_logs_dom_debug_text_for_skipped_candidate():
 
     page = StubPage(
         {
-            'div[role="button"]:has-text("View votes")': StubCollection(
+            'div[role="button"]:has-text("View votes")': StubItemCollection(
                 [StubItem("View votes", evaluated_text="aria-label only poll")]
             ),
         }
