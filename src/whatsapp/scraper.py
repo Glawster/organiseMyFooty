@@ -127,25 +127,7 @@ class WhatsAppPollScraper:
                     )
 
                     if pollLocators:
-                        sourceText = self.discovery.extractPollSourceText(
-                            pollLocators[0]
-                        )
-                        pollTitle = self.parser.extractPollTitle(sourceText=sourceText)
-                        lastSourceText = self.discovery.extractPollSourceText(
-                            pollLocators[-1]
-                        )
-                        lastPollTitle = self.parser.extractPollTitle(
-                            sourceText=lastSourceText
-                        )
-
-                        self.logger.debug(
-                            "found poll: %s",
-                            pollTitle or sourceText[:50],
-                        )
-                        self.logger.debug(
-                            "last poll: %s",
-                            lastPollTitle or lastSourceText[:50],
-                        )
+                        self.logVisiblePollCandidates(pollLocators)
 
                     for locator in pollLocators:
                         sourceText = self.discovery.extractPollSourceText(locator)
@@ -339,6 +321,15 @@ class WhatsAppPollScraper:
         )
 
     ## logging helpers
+
+    def logVisiblePollCandidates(self, pollLocators: list) -> None:
+        sourceText = self.discovery.extractPollSourceText(pollLocators[0])
+        pollTitle = self.parser.extractPollTitle(sourceText=sourceText)
+        lastSourceText = self.discovery.extractPollSourceText(pollLocators[-1])
+        lastPollTitle = self.parser.extractPollTitle(sourceText=lastSourceText)
+
+        self.logger.info("found poll: %s", pollTitle or sourceText[:50])
+        self.logger.debug("last poll: %s", lastPollTitle or lastSourceText[:50])
 
     def logPollAction(
         self,
