@@ -7,6 +7,8 @@ from whatsapp.selectors import WhatsAppSelectors
 
 logger = getLogger()
 MAX_SOURCE_KEY_LENGTH = 300
+MAX_DEBUG_TEXT_LENGTH = 240
+MAX_DOM_DEBUG_ANCESTOR_DEPTH = 6
 
 
 class PollDiscovery:
@@ -211,7 +213,7 @@ class PollDiscovery:
             }
 
             let current = node;
-            for (let depth = 0; current && depth < 6; depth += 1) {
+            for (let depth = 0; current && depth < %s; depth += 1) {
                 targets.push(current);
                 current = current.parentElement;
             }
@@ -226,7 +228,7 @@ class PollDiscovery:
 
             return collected.join("\n");
         }
-        """
+        """ % MAX_DOM_DEBUG_ANCESTOR_DEPTH
 
         try:
             return str(locator.evaluate(script, timeout=1000) or "")
@@ -238,7 +240,7 @@ class PollDiscovery:
         if debugText:
             self.logger.info(
                 "skipping poll candidate missing usable source text: %s",
-                debugText[:240],
+                debugText[:MAX_DEBUG_TEXT_LENGTH],
             )
             return
 

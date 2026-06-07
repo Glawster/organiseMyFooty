@@ -505,7 +505,10 @@ def test_find_poll_cards_logs_dom_debug_text_for_skipped_candidate():
     assert results == []
     assert (
         "info",
-        ("skipping poll candidate missing usable source text: %s", "aria-label only poll"),
+        (
+            "skipping poll candidate missing usable source text: %s",
+            "aria-label only poll",
+        ),
         {},
     ) in discovery.logger.messages
 
