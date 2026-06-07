@@ -611,11 +611,17 @@ class StubDiscoveryWithSourceTextAndDates:
 
 
 class StubDiscoveryWithSourceTexts:
-    def __init__(self, source_text_by_locator):
-        self.source_text_by_locator = source_text_by_locator
+    def __init__(self, sourceTextByLocator):
+        self.sourceTextByLocator = sourceTextByLocator
 
     def extractPollSourceText(self, locator):
-        return self.source_text_by_locator[locator]
+        return self.sourceTextByLocator[locator]
+
+    def extractMessageKey(self, locator) -> str:
+        return str(locator)
+
+    def buildPollLocatorKey(self, messageKey: str, sourceText: str) -> str:
+        return f"{messageKey}|{sourceText}"
 
 
 def test_should_stop_for_strict_lookback_with_all_polls_before_cutoff():
@@ -793,7 +799,7 @@ def test_scrape_poll_locator_does_not_mark_stop_for_session_inside_month_window(
     assert scraper.stopAfterCurrentPass is False
 
 
-def test_log_visible_poll_candidates_logs_found_poll_at_info_level():
+def test_log_visible_poll_candidates_logs_each_new_poll_once():
     parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
     scraper = WhatsAppPollScraper(
         config=_make_config(),
@@ -808,9 +814,32 @@ def test_log_visible_poll_candidates_logs_found_poll_at_info_level():
         }
     )
 
-    scraper.logVisiblePollCandidates(["poll-a", "poll-b"])
+    scraper.logVisiblePollCandidates(["poll-a", "poll-b"], set())
 
     assert scraper.logger.has_call("info", "found poll: %s", "Monday 7pm LLC")
+    assert scraper.logger.has_call("info", "found poll: %s", "Wednesday 8pm LLC")
+
+
+def test_log_visible_poll_candidates_skips_polls_seen_in_previous_passes():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    scraper = WhatsAppPollScraper(
+        config=_make_config(),
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        cacheStore=PollCacheStore(config=_make_config(), parser=parser),
+    )
+    sourceTexts = {
+        "poll-a": "Posted 28/04/2026\nMonday 7pm LLC\nSelect one or more\nView votes",
+        "poll-b": "Posted 30/04/2026\nWednesday 8pm LLC\nSelect one or more\nView votes",
+    }
+    scraper.discovery = StubDiscoveryWithSourceTexts(sourceTexts)
+
+    scraper.logVisiblePollCandidates(
+        ["poll-a", "poll-b"], {f"poll-a|{sourceTexts['poll-a']}"}
+    )
+
+    assert scraper.logger.has_call("info", "found poll: %s", "Wednesday 8pm LLC")
+    assert not scraper.logger.has_call("info", "found poll: %s", "Monday 7pm LLC")
 
 
 def test_build_scraped_poll_key_uses_source_hint_when_date_only_comes_from_dom():
