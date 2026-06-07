@@ -33,7 +33,7 @@ class RuntimeConfig:
     includeNoVotes: bool
     resume: bool
     pollTitleFilter: Optional[str]
-    strictMonth: bool = False
+    strictMonth: bool = True
     myName: str = "Andy Wilson"
 
 

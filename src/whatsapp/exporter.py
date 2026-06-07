@@ -40,7 +40,7 @@ class AttendanceExporter:
         self.logger.doing("attendance export")
         self.logger.info("starting export for group: %s", self.config.groupName)
         self.logger.info("month window: %s", self.config.monthWindow.monthKey)
-        self.logger.info("strict month filter: %s", self.config.strictMonth)
+        self.logger.info("month window filter: %s", self.config.strictMonth)
         self.logger.info("output dir: %s", self.config.outputDir)
 
         records = self.pollScraper.collectPollAttendance()
@@ -71,7 +71,9 @@ class AttendanceExporter:
 
     def writePollRows(self, rawRows: list[dict]) -> None:
         if self.config.dryRun:
-            self.logger.info("dry run: skipping polls.csv write (%s rows)", len(rawRows))
+            self.logger.info(
+                "dry run: skipping polls.csv write (%s rows)", len(rawRows)
+            )
             return
         self.logger.action("write polls.csv rows: %s", len(rawRows))
 

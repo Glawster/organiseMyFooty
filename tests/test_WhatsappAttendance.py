@@ -44,7 +44,7 @@ def _make_config(**overrides) -> RuntimeConfig:
         includeNoVotes=False,
         resume=False,
         pollTitleFilter=None,
-        strictMonth=False,
+        strictMonth=True,
     )
     defaults.update(overrides)
     return RuntimeConfig(**defaults)
@@ -72,6 +72,29 @@ def test_deduplicate_records_removes_duplicates():
     records = [_record(), _record()]
     result = deduplicateRecords(records)
     assert len(result) == 1
+
+
+def test_runtime_config_defaults_to_strict_month():
+    config = RuntimeConfig(
+        groupName="Test Group",
+        monthWindow=MonthWindow(
+            monthKey="2026-03",
+            startDate=date(2026, 3, 1),
+            endDate=date(2026, 3, 31),
+        ),
+        outputDir=Path("/tmp/test_output"),
+        userDataDir=Path("/tmp/test_profile"),
+        headless=True,
+        dryRun=True,
+        timeoutMs=5000,
+        limitPolls=None,
+        browserChannel=None,
+        includeNoVotes=False,
+        resume=False,
+        pollTitleFilter=None,
+    )
+
+    assert config.strictMonth is True
 
 
 # ---------------------------------------------------------------------------
