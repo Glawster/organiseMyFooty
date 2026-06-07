@@ -192,7 +192,15 @@ class PollDiscovery:
         return True
 
     def extractPollDomDebugText(self, locator) -> str:
-        """Return nearby DOM text/attributes for a poll button when normal extraction fails."""
+        """Return nearby DOM text/attributes for a poll button when normal extraction fails.
+
+        This runs a small script in the browser via Playwright's ``evaluate()`` so we can
+        inspect the live WhatsApp DOM around a poll button. The script walks up through the
+        nearest message container and a bounded number of ancestors, collecting unique text
+        plus stable attributes like aria-label, title, data-testid, and data-id. A Python
+        placeholder replacement injects the maximum ancestor depth into the browser-side
+        script while keeping the traversal limit explicit in this module.
+        """
         script = r"""
         (node) => {
             // Capture unique text and key attributes from the nearest message container

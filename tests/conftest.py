@@ -40,6 +40,13 @@ class _FakeStructuredLogger:
     def value(self, *args, **kwargs):
         self._record("value", *args, **kwargs)
 
+    def has_message(self, level: str, message: str) -> bool:
+        return any(
+            entry_level == level and message in args[0]
+            for entry_level, args, _kwargs in self.messages
+            if args and isinstance(args[0], str)
+        )
+
 
 def _fake_get_logger(name: str = "test.logger", **kwargs):
     """Return a stub logger matching the organiseMyProjects.logUtils factory."""
