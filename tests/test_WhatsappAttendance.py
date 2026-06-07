@@ -708,7 +708,7 @@ def test_scrape_poll_locator_marks_stop_when_session_date_is_before_month_window
     )
     scraper.discovery = StubDiscoveryWithSourceTextAndDates(
         source_text_by_locator={
-            "poll-a": "Posted 24/04/2026\nTuesday 7pm\nView votes",
+            "poll-a": "Posted 24/04/2026\nTuesday 7pm\nSelect one or more\nView votes",
         },
         raw_dates_by_locator={"poll-a": "24/04/2026"},
     )
@@ -743,7 +743,7 @@ def test_scrape_poll_locator_does_not_mark_stop_for_session_inside_month_window(
     )
     scraper.discovery = StubDiscoveryWithSourceTextAndDates(
         source_text_by_locator={
-            "poll-a": "Posted 24/04/2026\nFriday 7pm\nView votes",
+            "poll-a": "Posted 24/04/2026\nFriday 7pm\nSelect one or more\nView votes",
         },
         raw_dates_by_locator={"poll-a": "24/04/2026"},
     )
