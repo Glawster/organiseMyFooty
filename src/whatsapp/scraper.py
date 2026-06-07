@@ -80,15 +80,15 @@ class WhatsAppPollScraper:
         if not visibleDates:
             return False
 
-        newestVisibleDate = max(visibleDates)
+        oldestVisibleDate = min(visibleDates)
         lookbackStartDate = self.getStrictLookbackStartDate()
 
-        if newestVisibleDate >= lookbackStartDate:
+        if oldestVisibleDate >= lookbackStartDate:
             return False
 
         self.logger.info(
-            "reached before strict lookback window: newest visible poll date %s, cutoff %s",
-            newestVisibleDate,
+            "reached before strict lookback window: oldest visible poll date %s, cutoff %s",
+            oldestVisibleDate,
             lookbackStartDate,
         )
         return True

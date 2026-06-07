@@ -591,7 +591,33 @@ def test_should_stop_for_strict_lookback_with_all_polls_before_cutoff():
     assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is True
 
 
-def test_should_not_stop_for_strict_lookback_when_any_poll_within_window():
+def test_should_not_stop_for_strict_lookback_when_oldest_visible_poll_is_at_cutoff():
+    config = _make_config(
+        strictMonth=True,
+        monthWindow=MonthWindow(
+            monthKey="2026-05",
+            startDate=date(2026, 5, 1),
+            endDate=date(2026, 5, 31),
+        ),
+    )
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    scraper = WhatsAppPollScraper(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        cacheStore=PollCacheStore(config=config, parser=parser),
+    )
+    scraper.discovery = StubDiscoveryWithVisiblePollDates(
+        {
+            "poll-a": "25/04/2026",
+            "poll-b": "24/04/2026",
+        }
+    )
+
+    assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is False
+
+
+def test_should_stop_for_strict_lookback_when_older_poll_is_visible_with_newer_loaded_poll():
     config = _make_config(
         strictMonth=True,
         monthWindow=MonthWindow(
@@ -614,7 +640,7 @@ def test_should_not_stop_for_strict_lookback_when_any_poll_within_window():
         }
     )
 
-    assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is False
+    assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is True
 
 
 def test_should_not_stop_for_strict_lookback_when_only_dom_fallback_dates_exist():
