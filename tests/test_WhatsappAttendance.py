@@ -743,9 +743,9 @@ def test_scrape_poll_locator_does_not_mark_stop_for_session_inside_month_window(
     )
     scraper.discovery = StubDiscoveryWithSourceTextAndDates(
         source_text_by_locator={
-            "poll-a": "Posted 24/04/2026\nFriday 7pm\nSelect one or more\nView votes",
+            "poll-a": "Posted 28/04/2026\nMonday 7pm\nSelect one or more\nView votes",
         },
-        raw_dates_by_locator={"poll-a": "24/04/2026"},
+        raw_dates_by_locator={"poll-a": "28/04/2026"},
     )
 
     scraper.dialog = PollDialog(config=config, selectors=DEFAULT_SELECTORS)
