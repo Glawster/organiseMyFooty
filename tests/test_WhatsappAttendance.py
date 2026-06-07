@@ -311,8 +311,9 @@ def test_write_preview_json_logs_skip_in_dry_run(tmp_path):
 
 
 class StubItem:
-    def __init__(self, text: str):
+    def __init__(self, text: str, evaluated_text: str = ""):
         self.text = text
+        self.evaluated_text = evaluated_text
 
     def inner_text(self, timeout=None):
         return self.text
@@ -321,7 +322,7 @@ class StubItem:
         raise RuntimeError
 
     def evaluate(self, *_args, **_kwargs):
-        return ""
+        return self.evaluated_text
 
 
 class StubNestedLocator:
@@ -352,7 +353,8 @@ class StubCollection:
         return len(self.texts)
 
     def nth(self, index):
-        return StubItem(self.texts[index])
+        item = self.texts[index]
+        return item if isinstance(item, StubItem) else StubItem(item)
 
 
 class StubPage:
@@ -470,6 +472,42 @@ def test_extract_poll_source_text_prefers_message_container_over_view_votes_labe
         discovery.extractPollSourceText(item)
         == "Monday 7pm LLC\nSelect one or more\n01/03/2026\nView votes"
     )
+
+
+def test_extract_poll_source_text_falls_back_to_dom_debug_text():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+    item = StubItem(
+        "View votes",
+        evaluated_text="Posted 1/5/26\nSession Sunday 7pm 3/5/26\nView votes",
+    )
+
+    assert (
+        discovery.extractPollSourceText(item)
+        == "Posted 1/5/26\nSession Sunday 7pm 3/5/26\nView votes"
+    )
+
+
+def test_find_poll_cards_logs_dom_debug_text_for_skipped_candidate():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+
+    page = StubPage(
+        {
+            'div[role="button"]:has-text("View votes")': StubCollection(
+                [StubItem("View votes", evaluated_text="aria-label only poll")]
+            ),
+        }
+    )
+
+    results = discovery.findPollCards(page)
+
+    assert results == []
+    assert (
+        "info",
+        ("skipping poll candidate missing usable source text: %s", "aria-label only poll"),
+        {},
+    ) in discovery.logger.messages
 
 
 class StubDiscoveryWithVisiblePollDates:

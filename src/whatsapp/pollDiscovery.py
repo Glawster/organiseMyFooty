@@ -51,6 +51,7 @@ class PollDiscovery:
                 item = self.resolvePollButton(locator.nth(index))
                 sourceText = self.extractPollSourceText(item)
                 if self.selectors.viewVotesText.lower() not in sourceText.lower():
+                    self.logSkippedPollCandidate(item)
                     continue
 
                 messageKey = self.extractMessageKey(item)
@@ -170,9 +171,13 @@ class PollDiscovery:
 
         try:
             text = locator.inner_text(timeout=1000)
-            return text if self.pollSourceTextIsUseful(text) else ""
+            if self.pollSourceTextIsUseful(text):
+                return text
         except Exception:
-            return ""
+            pass
+
+        text = self.extractPollDomDebugText(locator)
+        return text if self.pollSourceTextIsUseful(text) else ""
 
     def pollSourceTextIsUseful(self, text: str) -> bool:
         collapsed = " ".join(text.split()).strip().lower()
@@ -183,6 +188,61 @@ class PollDiscovery:
             return False
 
         return True
+
+    def extractPollDomDebugText(self, locator) -> str:
+        script = r"""
+        (node) => {
+            const collected = [];
+            const seen = new Set();
+            const add = (value) => {
+                const text = (value || "").replace(/\s+/g, " ").trim();
+                if (!text || seen.has(text)) {
+                    return;
+                }
+
+                seen.add(text);
+                collected.push(text);
+            };
+
+            const targets = [];
+            const messageRoot = node.closest('[data-id], [data-testid*="msg"]');
+            if (messageRoot) {
+                targets.push(messageRoot);
+            }
+
+            let current = node;
+            for (let depth = 0; current && depth < 6; depth += 1) {
+                targets.push(current);
+                current = current.parentElement;
+            }
+
+            for (const el of targets) {
+                add(el.innerText || el.textContent || "");
+                add(el.getAttribute && el.getAttribute("aria-label"));
+                add(el.getAttribute && el.getAttribute("title"));
+                add(el.getAttribute && el.getAttribute("data-testid"));
+                add(el.getAttribute && el.getAttribute("data-id"));
+            }
+
+            return collected.join("\n");
+        }
+        """
+
+        try:
+            return str(locator.evaluate(script, timeout=1000) or "")
+        except Exception:
+            return ""
+
+    def logSkippedPollCandidate(self, locator) -> None:
+        debugText = self.extractPollDomDebugText(locator)
+        if debugText:
+            self.logger.info(
+                "skipping poll candidate missing usable source text: %s",
+                debugText[:240],
+            )
+            return
+
+        self.logger.info("skipping poll candidate missing usable source text")
 
     def logVisiblePollText(self, page) -> None:
         try:
