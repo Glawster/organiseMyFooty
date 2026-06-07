@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from pathlib import Path
 from datetime import date, datetime
 
@@ -565,6 +566,26 @@ class StubDiscoveryWithOnlyDomFallbackDates(StubDiscoveryWithVisiblePollDates):
         return self.raw_dates_by_locator[sourceText]
 
 
+class StubDiscoveryWithSourceTextAndDates:
+    def __init__(self, source_text_by_locator, raw_dates_by_locator):
+        self.source_text_by_locator = source_text_by_locator
+        self.raw_dates_by_locator = raw_dates_by_locator
+
+    def extractPollSourceText(self, locator):
+        return self.source_text_by_locator[locator]
+
+    def extractPollDateText(
+        self, locator, sourceText: str, allowDomFallback: bool = True
+    ) -> str:
+        return self.raw_dates_by_locator[locator]
+
+    def extractMessageKey(self, locator) -> str:
+        return str(locator)
+
+    def buildPollLocatorKey(self, messageKey: str, sourceText: str) -> str:
+        return f"{messageKey}|{sourceText}"
+
+
 def test_should_stop_for_strict_lookback_with_all_polls_before_cutoff():
     config = _make_config(
         strictMonth=True,
@@ -667,6 +688,77 @@ def test_should_not_stop_for_strict_lookback_when_only_dom_fallback_dates_exist(
     )
 
     assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is False
+
+
+def test_scrape_poll_locator_marks_stop_when_session_date_is_before_month_window():
+    config = _make_config(
+        strictMonth=True,
+        monthWindow=MonthWindow(
+            monthKey="2026-05",
+            startDate=date(2026, 5, 1),
+            endDate=date(2026, 5, 31),
+        ),
+    )
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    scraper = WhatsAppPollScraper(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        cacheStore=PollCacheStore(config=config, parser=parser),
+    )
+    scraper.discovery = StubDiscoveryWithSourceTextAndDates(
+        source_text_by_locator={
+            "poll-a": "Posted 24/04/2026\nTuesday 7pm\nView votes",
+        },
+        raw_dates_by_locator={"poll-a": "24/04/2026"},
+    )
+
+    result = scraper.scrapePollLocator(
+        page=None,
+        locator="poll-a",
+        index=1,
+        totalPolls=1,
+        recordsByPollKey=OrderedDict(),
+    )
+
+    assert result == 0
+    assert scraper.stopAfterCurrentPass is True
+
+
+def test_scrape_poll_locator_does_not_mark_stop_for_session_inside_month_window():
+    config = _make_config(
+        strictMonth=True,
+        monthWindow=MonthWindow(
+            monthKey="2026-05",
+            startDate=date(2026, 5, 1),
+            endDate=date(2026, 5, 31),
+        ),
+    )
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    scraper = WhatsAppPollScraper(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        cacheStore=PollCacheStore(config=config, parser=parser),
+    )
+    scraper.discovery = StubDiscoveryWithSourceTextAndDates(
+        source_text_by_locator={
+            "poll-a": "Posted 24/04/2026\nFriday 7pm\nView votes",
+        },
+        raw_dates_by_locator={"poll-a": "24/04/2026"},
+    )
+
+    scraper.dialog = PollDialog(config=config, selectors=DEFAULT_SELECTORS)
+    result = scraper.scrapePollLocator(
+        page=None,
+        locator="poll-a",
+        index=1,
+        totalPolls=1,
+        recordsByPollKey=OrderedDict(),
+    )
+
+    assert result == 0
+    assert scraper.stopAfterCurrentPass is False
 
 
 def test_build_scraped_poll_key_uses_source_hint_when_date_only_comes_from_dom():

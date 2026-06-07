@@ -45,6 +45,7 @@ class WhatsAppPollScraper:
             parser=parser,
             discovery=self.discovery,
         )
+        self.stopAfterCurrentPass = False
 
     ## date window helpers
 
@@ -101,6 +102,7 @@ class WhatsAppPollScraper:
         recordsByPollKey = self.cacheStore.loadPollCache()
         pollCount = 0
         seenPollKeys: set[str] = set()
+        self.stopAfterCurrentPass = False
 
         with sync_playwright() as playwright:
             browserContext = playwright.chromium.launch_persistent_context(
@@ -169,6 +171,9 @@ class WhatsAppPollScraper:
                     if self.hasReachedPollLimit(pollCount):
                         break
 
+                    if self.stopAfterCurrentPass:
+                        break
+
                     if self.shouldStopForStrictLookback(pollLocators):
                         break
 
@@ -194,6 +199,10 @@ class WhatsAppPollScraper:
         sourceText = self.discovery.extractPollSourceText(locator)
 
         if self.shouldSkipForTitleFilter(sourceText):
+            return 0
+
+        if self.shouldStopForPastMonthWindow(locator, sourceText):
+            self.stopAfterCurrentPass = True
             return 0
 
         pollKey, pollTitle, _pollDateText = self.parser.buildPollKeyFromSourceText(
@@ -274,6 +283,37 @@ class WhatsAppPollScraper:
                 self.config.pollTitleFilter,
             )
         return shouldSkip
+
+    def shouldStopForPastMonthWindow(self, locator, sourceText: str) -> bool:
+        if not self.config.strictMonth:
+            return False
+
+        pollTitle = self.parser.extractPollTitle(sourceText=sourceText)
+        if not self.parser.isValidSessionPoll(pollTitle):
+            return False
+
+        rawDateText = self.discovery.extractPollDateText(locator, sourceText)
+        pollDateText = self.parser.normaliseDateText(rawDateText)
+        if not pollDateText:
+            return False
+
+        sessionDateText = self.parser.calculateSessionDateText(
+            pollTitle=pollTitle,
+            pollDateText=pollDateText,
+        )
+        sessionDate = self.parser.parseSessionDateValue(sessionDateText)
+        if sessionDate is None:
+            return False
+
+        if sessionDate >= self.config.monthWindow.startDate:
+            return False
+
+        self.logger.info(
+            "reached before month window via session date: %s (%s)",
+            pollTitle,
+            sessionDateText,
+        )
+        return True
 
     def sourceTextHasStablePollDate(self, sourceText: str) -> bool:
         rawDateText = self.parser.extractLikelyDateText(sourceText)
