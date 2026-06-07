@@ -47,6 +47,12 @@ class _FakeStructuredLogger:
             if args and isinstance(args[0], str)
         )
 
+    def has_call(self, level: str, message: str, *call_args) -> bool:
+        return any(
+            entry_level == level and args == (message, *call_args)
+            for entry_level, args, _kwargs in self.messages
+        )
+
 
 def _fake_get_logger(name: str = "test.logger", **kwargs):
     """Return a stub logger matching the organiseMyProjects.logUtils factory."""
