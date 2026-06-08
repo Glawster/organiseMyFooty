@@ -104,9 +104,19 @@ class PollTextParser:
     def buildPollKeyFromParts(
         self, pollTitle: str, pollDateText: str, sourceHint: str
     ) -> str:
+
+        sessionDateText = self.calculateSessionDateText(
+            pollTitle=pollTitle,
+            pollDateText=pollDateText,
+        )
+
+        if sessionDateText:
+            return f"{sessionDateText[:8]}|{pollTitle.casefold()}"
+
         if pollDateText:
-            return f"{pollTitle}|{pollDateText}"
-        return f"{pollTitle}|{sourceHint[:80]}"
+            return f"{pollDateText}|{pollTitle.casefold()}"
+
+        return f"{pollTitle.casefold()}|{sourceHint[:80]}"
 
     def buildPollKeyFromSourceText(self, sourceText: str) -> tuple[str, str, str]:
         pollTitle = self.extractPollTitle(sourceText=sourceText) or "unknown poll"
