@@ -156,13 +156,18 @@ class PollDiscovery:
         if not isinstance(payload, dict):
             return ""
 
+        self.logger.info(
+            "date candidates: previous=%s visible=%s",
+            payload.get("previousSiblingDates"),
+            payload.get("precedingVisibleDates")[:5],
+        )
+
         for key in ("previousSiblingDates", "precedingVisibleDates"):
             values = payload.get(key) or []
             for value in values:
                 text = str(value or "").strip()
                 if text:
                     return text
-
         return ""
 
     ## locator helpers

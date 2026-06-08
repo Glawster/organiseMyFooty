@@ -89,9 +89,7 @@ class AttendanceReportBuilder:
         for voter in voterNames:
             row = [voter]
             for session in columns:
-                row.append(
-                    attendance.get((voter, session.weekNumber, session.sessionName), "")
-                )
+                row.append(attendance.get((voter, session.pollKey), ""))
             rows.append(row)
 
         return rows
@@ -101,11 +99,15 @@ class AttendanceReportBuilder:
         self,
         records: list[PollRecord],
         pollSessions: OrderedDict[str, PollSession],
-    ) -> dict[tuple[str, int, str], str]:
-        attendance: dict[tuple[str, int, str], str] = {}
+    ) -> dict[tuple[str, str], str]:
+
+        attendance: dict[tuple[str, str], str] = {}
         for record in records:
             pollSession = pollSessions[self.buildPollKey(record)]
-            key = (record.voterName, pollSession.weekNumber, pollSession.sessionName)
+            key = (
+                record.voterName,
+                pollSession.pollKey,
+            )
             current = attendance.get(key, "")
 
             if record.option.lower() == "yes":

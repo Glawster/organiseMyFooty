@@ -229,6 +229,15 @@ class WhatsAppPollScraper:
             if not pollRecords:
                 return 0
 
+            for record in pollRecords[:1]:
+                self.logger.info(
+                    "resolved: %s -> %s -> %s -> %s",
+                    record.pollTitle,
+                    record.pollDateText,
+                    record.sessionDateText,
+                    record.sourceHint.replace("\n", " | "),
+                )
+
             pollKey = self.buildScrapedPollKey(
                 sourceText=sourceText,
                 pollRecord=pollRecords[0],
@@ -304,21 +313,13 @@ class WhatsAppPollScraper:
     def buildScrapedPollKey(
         self, sourceText: str, pollRecord: PollRecord, fallbackPollKey: str
     ) -> str:
-        if self.sourceTextHasStablePollDate(sourceText):
-            return self.parser.buildPollKeyFromParts(
-                pollTitle=pollRecord.pollTitle,
-                pollDateText=pollRecord.pollDateText,
-                sourceHint=sourceText[:240],
-            )
-
-        return (
-            self.parser.buildPollKeyFromParts(
-                pollTitle=pollRecord.pollTitle,
-                pollDateText="",
-                sourceHint=sourceText[:240],
-            )
-            or fallbackPollKey
+        pollKey = self.parser.buildPollKeyFromParts(
+            pollTitle=pollRecord.pollTitle,
+            pollDateText=pollRecord.pollDateText,
+            sourceHint=pollRecord.sourceHint.replace("\n", " | "),
         )
+
+        return pollKey or fallbackPollKey
 
     ## logging helpers
 
@@ -336,7 +337,7 @@ class WhatsAppPollScraper:
 
             candidateKeysSeenThisPass.add(key)
             pollTitle = self.parser.extractPollTitle(sourceText=sourceText)
-            self.logger.info("found poll: %s", pollTitle or sourceText[:50])
+            self.logger.debug("found poll: %s", pollTitle or sourceText[:50])
 
     def logPollAction(
         self,
@@ -355,5 +356,4 @@ class WhatsAppPollScraper:
             )
             return
 
-        self.logger.info("poll %s/%s: %s", index, totalPolls, pollTitle)
-        self.logger.doing("getting poll data")
+        self.logger.doing(f"processing poll {index}/{totalPolls}: {pollTitle}")
