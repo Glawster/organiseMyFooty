@@ -104,6 +104,16 @@ class PollDiscovery:
             };
 
             const messageNode = node.closest('[data-id], [data-testid*="msg"]') || node;
+            const textPreview = (el) => (el?.innerText || el?.textContent || "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .slice(0, 120);
+            const parentTagNames = [];
+            let parent = messageNode.parentElement;
+            while (parent && parentTagNames.length < 6) {
+                parentTagNames.push(parent.tagName);
+                parent = parent.parentElement;
+            }
             const messageRect = messageNode.getBoundingClientRect();
             const previousSiblingDates = [];
             let sibling = messageNode.previousElementSibling;
@@ -137,6 +147,14 @@ class PollDiscovery:
                 .sort((a, b) => b.bottom - a.bottom);
 
             return {
+                messageNodeDiagnostics: {
+                    tagName: messageNode.tagName,
+                    dataTestid: messageNode.getAttribute("data-testid"),
+                    dataId: messageNode.getAttribute("data-id"),
+                    parentTagNames,
+                    previousSiblingTagName: messageNode.previousElementSibling?.tagName || "",
+                    previousSiblingText: textPreview(messageNode.previousElementSibling),
+                },
                 previousSiblingDates,
                 precedingVisibleDates: precedingVisibleDates.map((item) => item.text),
             };
@@ -156,17 +174,37 @@ class PollDiscovery:
         if not isinstance(payload, dict):
             return ""
 
+        previousSiblingDates = payload.get("previousSiblingDates") or []
+        precedingVisibleDates = payload.get("precedingVisibleDates") or []
+        messageNodeDiagnostics = payload.get("messageNodeDiagnostics") or {}
+        if messageNodeDiagnostics:
+            self.logger.info(
+                "date lookup node tag=%s data-testid=%s data-id=%s parent tags=%s previous sibling tag=%s previous sibling text=%s",
+                messageNodeDiagnostics.get("tagName"),
+                messageNodeDiagnostics.get("dataTestid"),
+                messageNodeDiagnostics.get("dataId"),
+                messageNodeDiagnostics.get("parentTagNames"),
+                messageNodeDiagnostics.get("previousSiblingTagName"),
+                messageNodeDiagnostics.get("previousSiblingText"),
+            )
         self.logger.info(
-            "date candidates: previous=%s visible=%s",
-            payload.get("previousSiblingDates"),
-            payload.get("precedingVisibleDates")[:5],
+            "date candidates previous sibling dates=%s preceding visible dates=%s",
+            previousSiblingDates,
+            precedingVisibleDates[:5],
         )
 
-        for key in ("previousSiblingDates", "precedingVisibleDates"):
-            values = payload.get(key) or []
+        for key, values in (
+            ("previousSiblingDates", previousSiblingDates),
+            ("precedingVisibleDates", precedingVisibleDates),
+        ):
             for value in values:
                 text = str(value or "").strip()
                 if text:
+                    self.logger.info(
+                        "selected date candidate %s from %s",
+                        text,
+                        key,
+                    )
                     return text
         return ""
 
