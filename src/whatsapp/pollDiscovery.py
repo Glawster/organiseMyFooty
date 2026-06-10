@@ -103,7 +103,44 @@ class PollDiscovery:
                 return values;
             };
 
-            const messageNode = node.closest('[data-id], [data-testid*="msg"]') || node;
+            const collectPreviousSiblingDates = (root) => {
+                const dates = [];
+                let sibling = root?.previousElementSibling;
+                while (sibling && dates.length < 4) {
+                    const siblingDates = collectDateTexts(sibling);
+                    if (siblingDates.length) {
+                        dates.push(...siblingDates);
+                        break;
+                    }
+                    sibling = sibling.previousElementSibling;
+                }
+                return dates;
+            };
+
+            const primaryNode = node.closest('[data-id]')
+                || node.closest('.focusable-list-item')
+                || node.closest('[data-testid*="msg"]')
+                || node.closest('[role="row"]')
+                || node;
+            const candidateNodes = [];
+            const seenNodes = new Set();
+            let candidate = primaryNode;
+            while (candidate && candidateNodes.length < 8) {
+                if (!seenNodes.has(candidate)) {
+                    seenNodes.add(candidate);
+                    candidateNodes.push(candidate);
+                }
+                candidate = candidate.parentElement;
+            }
+            const matchedCandidate = candidateNodes
+                .map((candidateNode, index) => ({
+                    candidateNode,
+                    index,
+                    dates: collectPreviousSiblingDates(candidateNode),
+                }))
+                .find((item) => item.dates.length);
+            const messageNode = matchedCandidate?.candidateNode || primaryNode;
+            const previousSiblingDates = matchedCandidate?.dates || [];
             const textPreview = (el) => (el?.innerText || el?.textContent || "")
                 .replace(/\s+/g, " ")
                 .trim()
@@ -115,16 +152,6 @@ class PollDiscovery:
                 parent = parent.parentElement;
             }
             const messageRect = messageNode.getBoundingClientRect();
-            const previousSiblingDates = [];
-            let sibling = messageNode.previousElementSibling;
-            while (sibling && previousSiblingDates.length < 4) {
-                const siblingDates = collectDateTexts(sibling);
-                if (siblingDates.length) {
-                    previousSiblingDates.push(...siblingDates);
-                    break;
-                }
-                sibling = sibling.previousElementSibling;
-            }
 
             const precedingVisibleDates = Array.from(document.querySelectorAll("span, div"))
                 .map((el) => {
@@ -152,6 +179,7 @@ class PollDiscovery:
                     dataTestid: messageNode.getAttribute("data-testid"),
                     dataId: messageNode.getAttribute("data-id"),
                     parentTagNames,
+                    ancestorIndex: matchedCandidate?.index || 0,
                     previousSiblingTagName: messageNode.previousElementSibling?.tagName || "",
                     previousSiblingText: textPreview(messageNode.previousElementSibling),
                 },
@@ -178,16 +206,17 @@ class PollDiscovery:
         precedingVisibleDates = payload.get("precedingVisibleDates") or []
         messageNodeDiagnostics = payload.get("messageNodeDiagnostics") or {}
         if messageNodeDiagnostics:
-            self.logger.info(
-                "date lookup node tag=%s data-testid=%s data-id=%s parent tags=%s previous sibling tag=%s previous sibling text=%s",
+            self.logger.debug(
+                "date lookup node tag=%s data-testid=%s data-id=%s ancestor index=%s parent tags=%s previous sibling tag=%s previous sibling text=%s",
                 messageNodeDiagnostics.get("tagName"),
                 messageNodeDiagnostics.get("dataTestid"),
                 messageNodeDiagnostics.get("dataId"),
+                messageNodeDiagnostics.get("ancestorIndex"),
                 messageNodeDiagnostics.get("parentTagNames"),
                 messageNodeDiagnostics.get("previousSiblingTagName"),
                 messageNodeDiagnostics.get("previousSiblingText"),
             )
-        self.logger.info(
+        self.logger.debug(
             "date candidates previous sibling dates=%s preceding visible dates=%s",
             previousSiblingDates,
             precedingVisibleDates[:5],
@@ -200,7 +229,7 @@ class PollDiscovery:
             for value in values:
                 text = str(value or "").strip()
                 if text:
-                    self.logger.info(
+                    self.logger.debug(
                         "selected date candidate %s from %s",
                         text,
                         key,

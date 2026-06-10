@@ -183,7 +183,12 @@ class WhatsAppPollScraper:
         if self.shouldSkipForTitleFilter(sourceText):
             return 0
 
-        if self.shouldStopForPastMonthWindow(locator, sourceText):
+        pollTitle = self.parser.extractPollTitle(sourceText=sourceText)
+        rawDateText = ""
+        if self.parser.isValidSessionPoll(pollTitle):
+            rawDateText = self.discovery.extractPollDateText(locator, sourceText)
+
+        if self.shouldStopForPastMonthWindow(locator, sourceText, rawDateText):
             self.stopAfterCurrentPass = True
             return 0
 
@@ -225,6 +230,7 @@ class WhatsAppPollScraper:
                 dialog=dialog,
                 dialogText=dialogText,
                 sourceText=sourceText,
+                rawDateText=rawDateText,
             )
             if not pollRecords:
                 return 0
@@ -275,7 +281,9 @@ class WhatsAppPollScraper:
             )
         return shouldSkip
 
-    def shouldStopForPastMonthWindow(self, locator, sourceText: str) -> bool:
+    def shouldStopForPastMonthWindow(
+        self, locator, sourceText: str, rawDateText: str = ""
+    ) -> bool:
         if not self.config.strictMonth:
             return False
 
@@ -283,7 +291,8 @@ class WhatsAppPollScraper:
         if not self.parser.isValidSessionPoll(pollTitle):
             return False
 
-        rawDateText = self.discovery.extractPollDateText(locator, sourceText)
+        if not rawDateText:
+            rawDateText = self.discovery.extractPollDateText(locator, sourceText)
         pollDateText = self.parser.normaliseDateText(rawDateText)
         if not pollDateText:
             return False
@@ -356,4 +365,5 @@ class WhatsAppPollScraper:
             )
             return
 
+        self.logger.debug("-" * 60)
         self.logger.doing(f"processing poll {index}/{totalPolls}: {pollTitle}")

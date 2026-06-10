@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from pathlib import Path
 from datetime import date, datetime
+import json
 
 from attendanceConfig import MonthWindow, RuntimeConfig
 
@@ -40,11 +41,13 @@ def _make_config(**overrides) -> RuntimeConfig:
         headless=True,
         dryRun=True,
         timeoutMs=5000,
+        logLevel=20,
         limitPolls=None,
         browserChannel=None,
         includeNoVotes=False,
         resume=False,
         pollTitleFilter=None,
+        usePollCache=False,
         strictMonth=True,
     )
     defaults.update(overrides)
@@ -88,6 +91,7 @@ def test_runtime_config_defaults_to_strict_month():
         headless=True,
         dryRun=True,
         timeoutMs=5000,
+        logLevel=20,
         limitPolls=None,
         browserChannel=None,
         includeNoVotes=False,
@@ -201,6 +205,36 @@ def test_build_poll_records_from_dialog_keeps_out_of_month_when_not_strict():
     assert records[0].sessionDateText == "20260406 19:00"
 
 
+def test_build_poll_records_from_dialog_prefers_pre_dialog_date():
+    config = _make_config(
+        strictMonth=True,
+        monthWindow=MonthWindow(
+            monthKey="2026-05",
+            startDate=date(2026, 5, 1),
+            endDate=date(2026, 5, 31),
+        ),
+    )
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    builder = PollRecordsBuilder(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        discovery=StubDiscoveryWithDate("06/05/2026"),
+    )
+
+    records = builder.buildPollRecordsFromDialog(
+        locator=None,
+        dialog=None,
+        dialogText="Sunday 7pm football factory\nYes\nAlice",
+        sourceText="Sunday 7pm football factory\nSelect one or more\nView votes",
+        rawDateText="09/05/2026",
+    )
+
+    assert len(records) == 1
+    assert records[0].pollDateText == "20260509"
+    assert records[0].sessionDateText == "20260510 19:00"
+
+
 def test_build_poll_records_from_dialog_skips_explicit_future_month_when_strict():
     config = _make_config(
         strictMonth=True,
@@ -244,6 +278,58 @@ def test_poll_cache_payload_respects_strict_mode():
     )
 
     assert is_valid is False
+
+
+def test_load_poll_cache_ignores_cache_by_default(tmp_path):
+    config = _make_config(outputDir=tmp_path)
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    cache_store = PollCacheStore(config=config, parser=parser)
+    cache_store.getPollCachePath().write_text(
+        "{}",
+        encoding="utf-8",
+    )
+
+    cachedPolls = cache_store.loadPollCache()
+
+    assert cachedPolls == OrderedDict()
+    assert (
+        "info",
+        ("poll cache ignored",),
+        {},
+    ) in cache_store.logger.messages
+
+
+def test_load_poll_cache_reads_cache_when_enabled(tmp_path):
+    config = _make_config(outputDir=tmp_path, usePollCache=True)
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    cache_store = PollCacheStore(config=config, parser=parser)
+    cache_store.getPollCachePath().write_text(
+        json.dumps(
+            {
+                "version": POLL_CACHE_VERSION,
+                "groupName": config.groupName,
+                "month": config.monthWindow.monthKey,
+                "strictMonth": config.strictMonth,
+                "polls": {
+                    "poll-1": [
+                        {
+                            "pollTitle": "Monday Training",
+                            "pollDateText": "20260301",
+                            "option": "Yes",
+                            "voterName": "Alice",
+                            "sourceHint": "Monday Training",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cachedPolls = cache_store.loadPollCache()
+
+    assert list(cachedPolls) == ["poll-1"]
+    assert cachedPolls["poll-1"][0].voterName == "Alice"
 
 
 def test_save_poll_cache_logs_skip_in_dry_run(tmp_path):

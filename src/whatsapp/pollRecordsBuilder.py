@@ -35,6 +35,7 @@ class PollRecordsBuilder:
         dialog,
         dialogText: str,
         sourceText: str,
+        rawDateText: str = "",
     ) -> list[PollRecord]:
         pollTitle = self.parser.extractPollTitleFromDialog(dialogText) or (
             self.parser.extractPollTitle(dialog, sourceText=sourceText)
@@ -44,7 +45,8 @@ class PollRecordsBuilder:
             self.logger.info("skipping invalid session title: %s", pollTitle)
             return []
 
-        rawDateText = self.discovery.extractPollDateText(locator, sourceText)
+        if not rawDateText:
+            rawDateText = self.discovery.extractPollDateText(locator, sourceText)
         pollDateText = self.parser.normaliseDateText(rawDateText)
         pollDateDisplay = self._formatDateDisplay(
             pollDateText, fallbackText=rawDateText

@@ -10,7 +10,6 @@ from attendanceConfig import RuntimeConfig
 from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
 
 from whatsapp.constants import (
-    IGNORE_POLL_CACHE,
     POLL_CACHE_VERSION,
     RECENT_POLLS_TO_RECHECK,
 )
@@ -33,7 +32,7 @@ class PollCacheStore:
 
     # ## cache read utilities
     def loadPollCache(self) -> OrderedDict[str, list[PollRecord]]:
-        if IGNORE_POLL_CACHE:
+        if not self.config.usePollCache:
             self.logger.info("poll cache ignored")
             return OrderedDict()
 

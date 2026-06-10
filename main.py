@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 import json
 import argparse
+import logging
 
 from datetime import datetime
 from dataclasses import dataclass
@@ -156,6 +157,19 @@ def buildParser(state: dict) -> argparse.ArgumentParser:
         help="execute changes and write CSV exports (default is dry-run)",
     )
 
+    parser.add_argument(
+        "--cache",
+        action="store_true",
+        help="use cached poll results when available (default is to rescrape polls)",
+    )
+
+    parser.add_argument(
+        "-d",
+        "--debug",
+        action="store_true",
+        help="enable debug logging",
+    )
+
     return parser
 
 
@@ -164,7 +178,7 @@ def buildParser(state: dict) -> argparse.ArgumentParser:
 # -------------------------------------------------------------------
 
 
-def buildConfig(args: argparse.Namespace, dryRun: bool) -> Config:
+def buildConfig(args: argparse.Namespace, dryRun: bool, logLevel: int) -> Config:
     month = normaliseMonthInput(args.month)
     monthWindow = resolveMonthWindow(month)
 
@@ -180,11 +194,13 @@ def buildConfig(args: argparse.Namespace, dryRun: bool) -> Config:
         headless=False,
         dryRun=dryRun,
         timeoutMs=15000,
+        logLevel=logLevel,
         limitPolls=None,
         browserChannel=None,
         includeNoVotes=False,
         resume=False,
         pollTitleFilter=None,
+        usePollCache=args.cache,
     )
 
     return Config(runtime=runtime)
@@ -194,15 +210,13 @@ def buildConfig(args: argparse.Namespace, dryRun: bool) -> Config:
 # RUN
 # -------------------------------------------------------------------
 def run(config: Config) -> None:
-    logger = getLogger()
+    logger = getLogger(level=config.runtime.logLevel)
 
-    logger.doing("starting attendance export")
     logger.value("group", config.runtime.groupName)
     logger.value("dryRun", config.runtime.dryRun)
+    logger.value("logLevel", config.runtime.logLevel)
 
     AttendanceExporter(config.runtime).run()
-
-    logger.done("attendance export complete")
 
 
 # -------------------------------------------------------------------
@@ -217,13 +231,14 @@ def main() -> None:
         parser.error("--group is required.")
 
     dryRun = not args.confirm
+    logLevel = logging.DEBUG if args.debug else logging.INFO
 
     # REQUIRED logging pattern
-    logger = getLogger(includeConsole=True, dryRun=dryRun)
+    logger = getLogger(includeConsole=True, dryRun=dryRun, level=logLevel)
 
     logger.doing("starting application")
 
-    config = buildConfig(args, dryRun)
+    config = buildConfig(args, dryRun, logLevel)
 
     run(config)
 

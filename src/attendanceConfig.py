@@ -28,11 +28,13 @@ class RuntimeConfig:
     headless: bool
     dryRun: bool
     timeoutMs: int
+    logLevel: int
     limitPolls: Optional[int]
     browserChannel: Optional[str]
     includeNoVotes: bool
     resume: bool
     pollTitleFilter: Optional[str]
+    usePollCache: bool = False
     strictMonth: bool = True
     myName: str = "Andy Wilson"
 
