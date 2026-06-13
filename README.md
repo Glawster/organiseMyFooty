@@ -86,6 +86,8 @@ python exportAttendance.py --group "My Footy Group" --month 2026-03 --confirm
 | `--headless` | Run browser without showing a window |
 | `--confirm` | Write CSV exports; omit to run in safe dry-run mode (default) |
 
+Polls are always filtered to sessions whose derived session date falls inside the selected month window.
+
 ## Output files
 
 | File | Description |

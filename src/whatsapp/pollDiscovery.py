@@ -1,0 +1,418 @@
+from __future__ import annotations
+
+from attendanceConfig import RuntimeConfig
+from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
+from whatsapp.parsing import PollTextParser
+from whatsapp.selectors import WhatsAppSelectors
+
+logger = getLogger()
+MAX_SOURCE_KEY_LENGTH = 300
+MAX_DEBUG_TEXT_LENGTH = 240
+MAX_DOM_DEBUG_ANCESTOR_DEPTH = 6
+
+
+class PollDiscovery:
+    def __init__(
+        self,
+        config: RuntimeConfig,
+        selectors: WhatsAppSelectors,
+        parser: PollTextParser,
+    ):
+        self.config = config
+        self.selectors = selectors
+        self.parser = parser
+        self.logger = logger
+
+    ## public api
+
+    def findPollCards(self, page) -> list:
+        pollLocators: list = []
+        seenKeys: set[str] = set()
+        selectors = (
+            '[data-testid="poll-view-votes"]',
+            'div[role="button"]:has-text("View votes")',
+            'button:has-text("View votes")',
+            'span:has-text("View votes")',
+            'text="View votes"',
+        )
+        # selectors = (
+        #    '[data-testid="poll-view-votes"]',
+        #    'div[role="button"]:has-text("View votes")',
+        #    'span:has-text("View votes")',
+        #    'text="View votes"',
+        # )
+
+        for selector in selectors:
+            try:
+                locator = page.locator(selector)
+                count = locator.count()
+            except Exception:
+                continue
+
+            for index in range(count):
+                item = self.resolvePollButton(locator.nth(index))
+                sourceText = self.extractPollSourceText(item)
+                if self.selectors.viewVotesText.lower() not in sourceText.lower():
+                    self.logSkippedPollCandidate(item)
+                    continue
+
+                messageKey = self.extractMessageKey(item)
+                key = self.buildPollLocatorKey(messageKey, sourceText)
+                if key in seenKeys:
+                    continue
+
+                seenKeys.add(key)
+                pollLocators.append(item)
+
+        return pollLocators
+
+    def extractPollDateText(
+        self, locator, sourceText: str, allowDomFallback: bool = True
+    ) -> str:
+        textDate = self.parser.extractLikelyDateText(sourceText)
+        if textDate and self.parser.normaliseDateText(textDate):
+            return textDate
+
+        if not allowDomFallback:
+            return ""
+
+        script = r"""
+        (node) => {
+            const isDateText = (value) => {
+                const text = (value || "").trim();
+                return /^(today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(text)
+                    || /^\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4})$/.test(text);
+            };
+
+            const collectDateTexts = (root) => {
+                const values = [];
+                const seen = new Set();
+                const add = (value) => {
+                    const text = (value || "").trim();
+                    if (!isDateText(text) || seen.has(text)) {
+                        return;
+                    }
+                    seen.add(text);
+                    values.push(text);
+                };
+
+                add(root?.innerText || root?.textContent || "");
+                for (const el of root?.querySelectorAll?.("span, div") || []) {
+                    add(el.innerText || el.textContent || "");
+                }
+                return values;
+            };
+
+            const textPreview = (el) => (el?.innerText || el?.textContent || "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .slice(0, 120);
+
+            const collectPreviousSiblingDates = (root) => {
+                const dates = [];
+                let sibling = root?.previousElementSibling;
+                while (sibling && dates.length < 4) {
+                    const siblingDates = collectDateTexts(sibling);
+                    if (siblingDates.length) {
+                        dates.push(...siblingDates);
+                        break;
+                    }
+                    sibling = sibling.previousElementSibling;
+                }
+                return dates;
+            };
+
+            const primaryNode = node.closest('[data-id]')
+                || node.closest('.focusable-list-item')
+                || node.closest('[data-testid*="msg"]')
+                || node.closest('[role="row"]')
+                || node;
+            const candidateNodes = [];
+            const seenNodes = new Set();
+            let candidate = primaryNode;
+            while (candidate && candidateNodes.length < 8) {
+                if (!seenNodes.has(candidate)) {
+                    seenNodes.add(candidate);
+                    candidateNodes.push(candidate);
+                }
+                candidate = candidate.parentElement;
+            }
+            const matchedCandidate = candidateNodes
+                .map((candidateNode, index) => ({
+                    candidateNode,
+                    index,
+                    dates: collectPreviousSiblingDates(candidateNode),
+                }))
+                .find((item) => item.dates.length);
+            const messageNode = matchedCandidate?.candidateNode || primaryNode;
+            const previousSiblingDates = matchedCandidate?.dates || [];
+            const parentTagNames = [];
+            let parent = messageNode.parentElement;
+            while (parent && parentTagNames.length < 6) {
+                parentTagNames.push(parent.tagName);
+                parent = parent.parentElement;
+            }
+            const messageRect = primaryNode.getBoundingClientRect();
+
+            const visibleDateHeaders = Array.from(document.querySelectorAll("span, div"))
+                .map((el) => {
+                    const text = (el.innerText || el.textContent || "").trim();
+                    if (!isDateText(text)) {
+                        return null;
+                    }
+
+                    const rect = el.getBoundingClientRect();
+                    return {
+                        text,
+                        top: rect.top,
+                        bottom: rect.bottom,
+                        left: rect.left,
+                        right: rect.right,
+                        height: rect.height,
+                        width: rect.width,
+                    };
+                })
+                .filter(Boolean)
+                .filter((item) => item.height > 0 && item.width > 0)
+                .filter((item) => item.bottom <= messageRect.top + 5)
+                .sort((a, b) => b.bottom - a.bottom)
+                .filter((item, index, items) => {
+                    if (index === 0) {
+                        return true;
+                    }
+                    const previous = items[index - 1];
+                    return item.text !== previous.text
+                        || Math.abs(item.bottom - previous.bottom) > 2;
+                });
+
+            return {
+                messageNodeDiagnostics: {
+                    tagName: messageNode.tagName,
+                    dataTestid: messageNode.getAttribute("data-testid"),
+                    dataId: messageNode.getAttribute("data-id"),
+                    parentTagNames,
+                    ancestorIndex: matchedCandidate?.index || 0,
+                    previousSiblingTagName: messageNode.previousElementSibling?.tagName || "",
+                    previousSiblingText: textPreview(messageNode.previousElementSibling),
+                    visualLookupTop: messageRect.top,
+                },
+                visibleDateHeaders: visibleDateHeaders.map((item) => item.text),
+                previousSiblingDates,
+            };
+        }
+        """
+
+        try:
+            return self.selectDomFallbackDate(locator.evaluate(script, timeout=1000))
+        except Exception as exc:
+            self.logger.warning("Unable to derive poll date: %s", exc)
+            return ""
+
+    def selectDomFallbackDate(self, payload) -> str:
+        if isinstance(payload, str):
+            return payload
+
+        if not isinstance(payload, dict):
+            return ""
+
+        previousSiblingDates = payload.get("previousSiblingDates") or []
+        visibleDateHeaders = (
+            payload.get("visibleDateHeaders")
+            or payload.get("precedingVisibleDates")
+            or []
+        )
+        messageNodeDiagnostics = payload.get("messageNodeDiagnostics") or {}
+        if messageNodeDiagnostics:
+            self.logger.debug(
+                "date lookup node tag=%s data-testid=%s data-id=%s ancestor index=%s visual top=%s parent tags=%s previous sibling tag=%s previous sibling text=%s",
+                messageNodeDiagnostics.get("tagName"),
+                messageNodeDiagnostics.get("dataTestid"),
+                messageNodeDiagnostics.get("dataId"),
+                messageNodeDiagnostics.get("ancestorIndex"),
+                messageNodeDiagnostics.get("visualLookupTop"),
+                messageNodeDiagnostics.get("parentTagNames"),
+                messageNodeDiagnostics.get("previousSiblingTagName"),
+                messageNodeDiagnostics.get("previousSiblingText"),
+            )
+        self.logger.debug(
+            "date candidates visible headers=%s previous sibling dates=%s",
+            visibleDateHeaders[:5],
+            previousSiblingDates,
+        )
+
+        for key, values in (
+            ("visibleDateHeaders", visibleDateHeaders),
+            ("previousSiblingDates", previousSiblingDates),
+        ):
+            for value in values:
+                text = str(value or "").strip()
+                if text:
+                    self.logger.debug(
+                        "selected date candidate %s from %s",
+                        text,
+                        key,
+                    )
+                    return text
+        return ""
+
+    ## locator helpers
+    def resolvePollButton(self, locator):
+        for selector in (
+            '[data-testid="poll-view-votes"]',
+            'div[role="button"]:has-text("View votes")',
+            'button:has-text("View votes")',
+            f'text="{self.selectors.viewVotesText}"',
+        ):
+            try:
+                button = locator.locator(selector).first
+                if button.is_visible(timeout=500):
+                    return button
+            except Exception:
+                continue
+
+        return locator
+
+    def extractMessageKey(self, locator) -> str:
+        for selector, attribute in (
+            ("xpath=ancestor-or-self::*[@data-id][1]", "data-id"),
+            (
+                'xpath=ancestor-or-self::*[@data-testid][contains(@data-testid, "msg")][1]',
+                "data-testid",
+            ),
+        ):
+            try:
+                value = locator.locator(selector).first.get_attribute(
+                    attribute, timeout=1000
+                )
+                if value:
+                    return value
+            except Exception:
+                continue
+
+        return ""
+
+    def buildPollLocatorKey(self, messageKey: str, sourceText: str) -> str:
+        sourceKey = "|".join(sourceText.split())[:MAX_SOURCE_KEY_LENGTH]
+        if messageKey:
+            return f"{messageKey}|{sourceKey}"
+        return sourceKey
+
+    def extractPollSourceText(self, locator) -> str:
+        for selector in (
+            "xpath=ancestor-or-self::*[contains(., 'Select one or more') and contains(., 'View votes')][1]",
+            "xpath=ancestor-or-self::*[@data-id][1]",
+            'xpath=ancestor-or-self::*[@data-testid][contains(@data-testid, "msg")][1]',
+            "xpath=ancestor-or-self::*[contains(., 'View votes')][1]",
+        ):
+            try:
+                text = locator.locator(selector).first.inner_text(timeout=1000)
+                if self.pollSourceTextIsUseful(text):
+                    return text
+            except Exception:
+                continue
+
+        try:
+            text = locator.inner_text(timeout=1000)
+            if self.pollSourceTextIsUseful(text):
+                return text
+        except Exception as exc:
+            self.logger.debug("Unable to read poll source text from locator: %s", exc)
+
+        text = self.extractPollDomDebugText(locator)
+        return text if self.pollSourceTextIsUseful(text) else ""
+
+    def pollSourceTextIsUseful(self, text: str) -> bool:
+        collapsed = " ".join(text.split()).strip().lower()
+        if not collapsed:
+            return False
+
+        if collapsed in {self.selectors.viewVotesText.lower(), "select one or more"}:
+            return False
+
+        return True
+
+    def extractPollDomDebugText(self, locator) -> str:
+        """Return nearby DOM text/attributes for a poll button when normal extraction fails.
+
+        This runs a small script in the browser via Playwright's ``evaluate()`` so we can
+        inspect the live WhatsApp DOM around a poll button. The script walks up through the
+        nearest message container and a bounded number of ancestors, collecting unique text
+        plus stable attributes like aria-label, title, data-testid, and data-id. A Python
+        placeholder replacement injects the maximum ancestor depth into the browser-side
+        script while keeping the traversal limit explicit in this module.
+        """
+        script = r"""
+        (node) => {
+            // Capture unique text and key attributes from the nearest message container
+            // and its ancestors so skipped poll candidates leave useful diagnostics.
+            const collected = [];
+            const seen = new Set();
+            const add = (value) => {
+                const text = (value || "").replace(/\s+/g, " ").trim();
+                if (!text || seen.has(text)) {
+                    return;
+                }
+
+                seen.add(text);
+                collected.push(text);
+            };
+
+            const targets = [];
+            const messageRoot = node.closest('[data-id], [data-testid*="msg"]');
+            if (messageRoot) {
+                targets.push(messageRoot);
+            }
+
+            let current = node;
+            for (let depth = 0; current && depth < __MAX_DOM_DEBUG_ANCESTOR_DEPTH__; depth += 1) {
+                targets.push(current);
+                current = current.parentElement;
+            }
+
+            for (const el of targets) {
+                add(el.innerText || el.textContent || "");
+                add(el.getAttribute("aria-label"));
+                add(el.getAttribute("title"));
+                add(el.getAttribute("data-testid"));
+                add(el.getAttribute("data-id"));
+            }
+
+            return collected.join("\n");
+        }
+        """
+        script = script.replace(
+            "__MAX_DOM_DEBUG_ANCESTOR_DEPTH__",
+            str(MAX_DOM_DEBUG_ANCESTOR_DEPTH),
+        )
+
+        try:
+            return str(locator.evaluate(script, timeout=1000) or "")
+        except Exception:
+            return ""
+
+    def logSkippedPollCandidate(self, locator) -> None:
+        """Log a compact DOM snapshot when a visible poll candidate has no usable source text."""
+        debugText = self.extractPollDomDebugText(locator)
+        if debugText:
+            self.logger.info(
+                "skipping poll candidate missing usable source text: %s",
+                debugText[:MAX_DEBUG_TEXT_LENGTH],
+            )
+            return
+
+        self.logger.info("skipping poll candidate missing usable source text")
+
+    def logVisiblePollText(self, page) -> None:
+        try:
+            matches = page.locator("text=View votes")
+            self.logger.info("...visible View votes count: %s", matches.count())
+        except Exception as exc:
+            self.logger.warning("Unable to count visible View votes: %s", exc)
+
+        try:
+            bodyText = page.locator("body").inner_text(timeout=2000)
+            for line in bodyText.splitlines():
+                if "View votes" in line or "Select one or more" in line:
+                    self.logger.info("...visible poll marker: %s", line[:120])
+        except Exception as exc:
+            self.logger.warning("Unable to inspect visible poll text: %s", exc)
