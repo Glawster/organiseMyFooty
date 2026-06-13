@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 import csv
 import json
@@ -59,6 +60,7 @@ class AttendanceExporter:
         self.writePollRows(rawRows)
         self.writeSummaryRows(summaryRows)
         self.writeReportRows(reportRows)
+        self.writeSocialMediaSummaryText(reportRows)
         self.writePreviewJson(rawRows, summaryRows, reportRows)
         self.logger.done("attendance export")
 
@@ -120,6 +122,74 @@ class AttendanceExporter:
             summaryRows,
             ["name", "yesCount", "noCount", "totalVotes", "pollsResponded"],
         )
+
+    # ## social media summary utilities
+    def buildSocialMediaSummaryText(self, reportRows: list[list[str]]) -> str:
+        if len(reportRows) < 6:
+            return "Attendance summary unavailable."
+
+        dateRow = reportRows[1]
+        sessionIndexes = [
+            index for index, value in enumerate(dateRow[1:], start=1) if value.strip()
+        ]
+
+        if not sessionIndexes:
+            return "Attendance summary unavailable."
+
+        title = self.buildSocialMediaSummaryTitle(dateRow, sessionIndexes)
+        totalSessions = len(sessionIndexes)
+        sessionLabel = "session" if totalSessions == 1 else "sessions"
+        lines = [title, f"{totalSessions} {sessionLabel}"]
+        voterRows = [row for row in reportRows[5:] if row and row[0].strip()]
+        voterNameWidth = max((len(row[0].strip()) for row in voterRows), default=0)
+
+        for row in voterRows:
+            voterName = row[0].strip()
+
+            statuses = [
+                row[index].strip().lower() if index < len(row) else ""
+                for index in sessionIndexes
+            ]
+            yesCount = statuses.count("yes")
+
+            lines.append(
+                f"{voterName:<{voterNameWidth}} ... " f"{yesCount}/{totalSessions}"
+            )
+
+        return "\n".join(lines)
+
+    def buildSocialMediaSummaryTitle(
+        self, dateRow: list[str], sessionIndexes: list[int]
+    ) -> str:
+        for index in sessionIndexes:
+            if index >= len(dateRow):
+                continue
+
+            dateText = dateRow[index].strip()
+            if not dateText:
+                continue
+
+            try:
+                sessionDate = datetime.strptime(dateText, "%d/%m/%y")
+            except ValueError:
+                continue
+
+            return f"{sessionDate.strftime('%B %Y')} attendance summary"
+
+        return "Attendance summary"
+
+    def writeSocialMediaSummaryText(self, reportRows: list[list[str]]) -> None:
+        summaryPath = self.config.outputDir / "socialMediaSummary.txt"
+        summaryText = self.buildSocialMediaSummaryText(reportRows)
+
+        if self.config.dryRun:
+            self.logger.info(
+                "dry run: skipping socialMediaSummary.txt write: %s", summaryPath
+            )
+            return
+
+        self.logger.action("write socialMediaSummary.txt: %s", summaryPath)
+        summaryPath.write_text(summaryText + "\n", encoding="utf-8")
 
     # ## preview utilities
     def writePreviewJson(

@@ -236,7 +236,7 @@ class WhatsAppPollScraper:
                 return 0
 
             for record in pollRecords[:1]:
-                self.logger.info(
+                self.logger.debug(
                     "resolved: %s -> %s -> %s -> %s",
                     record.pollTitle,
                     record.pollDateText,

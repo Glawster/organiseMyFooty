@@ -227,9 +227,6 @@ class WhatsAppNavigation:
         """
 
         for _ in range(scrollPasses):
-            if self.clickOlderMessagesBanner(page):
-                continue
-
             result = None
             try:
                 result = page.evaluate(script)
@@ -246,5 +243,11 @@ class WhatsAppNavigation:
                 or not result.get("usedPreferredTarget")
             ):
                 page.mouse.wheel(0, -2500)
+                page.wait_for_timeout(1200)
+
+                if self.clickOlderMessagesBanner(page):
+                    continue
+
+                continue
 
             page.wait_for_timeout(1200)

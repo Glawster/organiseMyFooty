@@ -103,6 +103,11 @@ class PollDiscovery:
                 return values;
             };
 
+            const textPreview = (el) => (el?.innerText || el?.textContent || "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .slice(0, 120);
+
             const collectPreviousSiblingDates = (root) => {
                 const dates = [];
                 let sibling = root?.previousElementSibling;
@@ -141,19 +146,15 @@ class PollDiscovery:
                 .find((item) => item.dates.length);
             const messageNode = matchedCandidate?.candidateNode || primaryNode;
             const previousSiblingDates = matchedCandidate?.dates || [];
-            const textPreview = (el) => (el?.innerText || el?.textContent || "")
-                .replace(/\s+/g, " ")
-                .trim()
-                .slice(0, 120);
             const parentTagNames = [];
             let parent = messageNode.parentElement;
             while (parent && parentTagNames.length < 6) {
                 parentTagNames.push(parent.tagName);
                 parent = parent.parentElement;
             }
-            const messageRect = messageNode.getBoundingClientRect();
+            const messageRect = primaryNode.getBoundingClientRect();
 
-            const precedingVisibleDates = Array.from(document.querySelectorAll("span, div"))
+            const visibleDateHeaders = Array.from(document.querySelectorAll("span, div"))
                 .map((el) => {
                     const text = (el.innerText || el.textContent || "").trim();
                     if (!isDateText(text)) {
@@ -167,11 +168,22 @@ class PollDiscovery:
                         bottom: rect.bottom,
                         left: rect.left,
                         right: rect.right,
+                        height: rect.height,
+                        width: rect.width,
                     };
                 })
                 .filter(Boolean)
+                .filter((item) => item.height > 0 && item.width > 0)
                 .filter((item) => item.bottom <= messageRect.top + 5)
-                .sort((a, b) => b.bottom - a.bottom);
+                .sort((a, b) => b.bottom - a.bottom)
+                .filter((item, index, items) => {
+                    if (index === 0) {
+                        return true;
+                    }
+                    const previous = items[index - 1];
+                    return item.text !== previous.text
+                        || Math.abs(item.bottom - previous.bottom) > 2;
+                });
 
             return {
                 messageNodeDiagnostics: {
@@ -182,9 +194,10 @@ class PollDiscovery:
                     ancestorIndex: matchedCandidate?.index || 0,
                     previousSiblingTagName: messageNode.previousElementSibling?.tagName || "",
                     previousSiblingText: textPreview(messageNode.previousElementSibling),
+                    visualLookupTop: messageRect.top,
                 },
+                visibleDateHeaders: visibleDateHeaders.map((item) => item.text),
                 previousSiblingDates,
-                precedingVisibleDates: precedingVisibleDates.map((item) => item.text),
             };
         }
         """
@@ -203,28 +216,33 @@ class PollDiscovery:
             return ""
 
         previousSiblingDates = payload.get("previousSiblingDates") or []
-        precedingVisibleDates = payload.get("precedingVisibleDates") or []
+        visibleDateHeaders = (
+            payload.get("visibleDateHeaders")
+            or payload.get("precedingVisibleDates")
+            or []
+        )
         messageNodeDiagnostics = payload.get("messageNodeDiagnostics") or {}
         if messageNodeDiagnostics:
             self.logger.debug(
-                "date lookup node tag=%s data-testid=%s data-id=%s ancestor index=%s parent tags=%s previous sibling tag=%s previous sibling text=%s",
+                "date lookup node tag=%s data-testid=%s data-id=%s ancestor index=%s visual top=%s parent tags=%s previous sibling tag=%s previous sibling text=%s",
                 messageNodeDiagnostics.get("tagName"),
                 messageNodeDiagnostics.get("dataTestid"),
                 messageNodeDiagnostics.get("dataId"),
                 messageNodeDiagnostics.get("ancestorIndex"),
+                messageNodeDiagnostics.get("visualLookupTop"),
                 messageNodeDiagnostics.get("parentTagNames"),
                 messageNodeDiagnostics.get("previousSiblingTagName"),
                 messageNodeDiagnostics.get("previousSiblingText"),
             )
         self.logger.debug(
-            "date candidates previous sibling dates=%s preceding visible dates=%s",
+            "date candidates visible headers=%s previous sibling dates=%s",
+            visibleDateHeaders[:5],
             previousSiblingDates,
-            precedingVisibleDates[:5],
         )
 
         for key, values in (
+            ("visibleDateHeaders", visibleDateHeaders),
             ("previousSiblingDates", previousSiblingDates),
-            ("precedingVisibleDates", precedingVisibleDates),
         ):
             for value in values:
                 text = str(value or "").strip()

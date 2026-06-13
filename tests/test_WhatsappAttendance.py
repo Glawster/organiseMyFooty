@@ -415,6 +415,43 @@ def test_write_preview_json_logs_skip_in_dry_run(tmp_path):
     ) in exporter.logger.messages
 
 
+def test_build_social_media_summary_text_from_attendance_report_rows(tmp_path):
+    config = _make_config(outputDir=tmp_path)
+    exporter = AttendanceExporter(config)
+
+    reportRows = [
+        ["week", "week 1", ""],
+        ["date", "03/05/26", "05/05/26"],
+        ["venue", "Football Factory", "LLC"],
+        ["day", "Sunday", "Tuesday"],
+        ["name", "19:00", "10:30"],
+        ["Al", "yes", ""],
+        ["Bob", "no", "yes"],
+    ]
+
+    assert exporter.buildSocialMediaSummaryText(reportRows) == (
+        "May 2026 attendance summary\n"
+        "2 sessions\n"
+        "- Al ... 1/2 sessions attended\n"
+        "- Bob... 1/2 sessions attended"
+    )
+
+
+def test_write_social_media_summary_text_logs_skip_in_dry_run(tmp_path):
+    config = _make_config(outputDir=tmp_path, dryRun=True)
+    exporter = AttendanceExporter(config)
+    summaryPath = tmp_path / "socialMediaSummary.txt"
+
+    exporter.writeSocialMediaSummaryText([])
+
+    assert summaryPath.exists() is False
+    assert (
+        "info",
+        ("dry run: skipping socialMediaSummary.txt write: %s", summaryPath),
+        {},
+    ) in exporter.logger.messages
+
+
 # ---------------------------------------------------------------------------
 # discovery
 # ---------------------------------------------------------------------------
@@ -547,25 +584,25 @@ def test_extract_poll_date_text_can_skip_dom_fallback():
     assert discovery.extractPollDateText(item, item.text, allowDomFallback=False) == ""
 
 
-def test_extract_poll_date_text_prefers_previous_sibling_date_over_later_visible_date():
+def test_extract_poll_date_text_prefers_visible_header_over_previous_sibling_date():
     parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
     discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
     item = StubItem("Sunday 7pm football factory\n12:18\nView votes")
     item.evaluate = lambda *_args, **_kwargs: {
-        "previousSiblingDates": ["09/05/2026"],
-        "precedingVisibleDates": ["11/05/2026"],
+        "visibleDateHeaders": ["09/05/2026"],
+        "previousSiblingDates": ["06/05/2026"],
     }
 
     assert discovery.extractPollDateText(item, item.text) == "09/05/2026"
 
 
-def test_extract_poll_date_text_uses_visible_date_when_no_previous_sibling_date_exists():
+def test_extract_poll_date_text_uses_previous_sibling_date_as_legacy_fallback():
     parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
     discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
     item = StubItem("Tuesday 10.30am LLC\n08:39\nView votes")
     item.evaluate = lambda *_args, **_kwargs: {
-        "previousSiblingDates": [],
-        "precedingVisibleDates": ["11/05/2026"],
+        "visibleDateHeaders": [],
+        "previousSiblingDates": ["11/05/2026"],
     }
 
     assert discovery.extractPollDateText(item, item.text) == "11/05/2026"
