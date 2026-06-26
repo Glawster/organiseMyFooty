@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 import calendar
 import csv
 
@@ -37,6 +37,11 @@ class RuntimeConfig:
     usePollCache: bool = False
     strictMonth: bool = True
     myName: str = "Andy Wilson"
+    groupNames: tuple[str, ...] = ()
+
+    @property
+    def effectiveGroupNames(self) -> tuple[str, ...]:
+        return self.groupNames or (self.groupName,)
 
 
 def resolveMonthWindow(monthText: Optional[str] = None) -> MonthWindow:
@@ -80,10 +85,19 @@ def ensureOutputDir(path: Path) -> Path:
     return path
 
 
-def defaultOutputDir(groupName: str, monthWindow: MonthWindow) -> Path:
-    safeGroup = (
-        "".join(ch if ch.isalnum() else "_" for ch in groupName).strip("_").lower()
+def defaultOutputDir(groupName: str | Sequence[str], monthWindow: MonthWindow) -> Path:
+    if isinstance(groupName, str):
+        groupNames = [groupName]
+    else:
+        groupNames = list(groupName)
+
+    safeGroup = "__".join(
+        "".join(ch if ch.isalnum() else "_" for ch in name).strip("_").lower()
+        for name in groupNames
+        if name.strip()
     )
+    if not safeGroup:
+        safeGroup = "whatsapp_groups"
     return Path.cwd() / "output" / f"{safeGroup}_{monthWindow.monthKey}"
 
 

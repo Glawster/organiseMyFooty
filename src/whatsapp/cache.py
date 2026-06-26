@@ -70,7 +70,15 @@ class PollCacheStore:
         if payload.get("version") != POLL_CACHE_VERSION:
             self.logger.info("ignoring old poll cache version: %s", cachePath)
             return False
-        if payload.get("groupName") != self.config.groupName:
+        cacheGroupNames = payload.get("groupNames")
+        if cacheGroupNames is None:
+            cacheGroupNames = [payload.get("groupName")]
+        elif isinstance(cacheGroupNames, str):
+            cacheGroupNames = [cacheGroupNames]
+        elif not isinstance(cacheGroupNames, list):
+            cacheGroupNames = []
+
+        if tuple(cacheGroupNames) != self.config.effectiveGroupNames:
             self.logger.info("ignoring poll cache for different group: %s", cachePath)
             return False
         if payload.get("month") != self.config.monthWindow.monthKey:
@@ -128,6 +136,7 @@ class PollCacheStore:
         payload = {
             "version": POLL_CACHE_VERSION,
             "groupName": self.config.groupName,
+            "groupNames": list(self.config.effectiveGroupNames),
             "month": self.config.monthWindow.monthKey,
             "strictMonth": self.config.strictMonth,
             "savedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

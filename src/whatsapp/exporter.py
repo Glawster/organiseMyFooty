@@ -39,7 +39,10 @@ class AttendanceExporter:
     # ## export orchestration
     def run(self) -> None:
         self.logger.doing("attendance export")
-        self.logger.info("starting export for group: %s", self.config.groupName)
+        self.logger.info(
+            "starting export for group(s): %s",
+            ", ".join(self.config.effectiveGroupNames),
+        )
         self.logger.info("month window: %s", self.config.monthWindow.monthKey)
         self.logger.info("only including polls within configured month window")
         self.logger.info("output dir: %s", self.config.outputDir)
@@ -201,6 +204,7 @@ class AttendanceExporter:
         previewPath = self.config.outputDir / "exportPreview.json"
         payload = {
             "groupName": self.config.groupName,
+            "groupNames": list(self.config.effectiveGroupNames),
             "month": self.config.monthWindow.monthKey,
             "rawPollRows": rawRows,
             "summaryRows": summaryRows,

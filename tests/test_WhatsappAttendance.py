@@ -280,6 +280,28 @@ def test_poll_cache_payload_respects_strict_mode():
     assert is_valid is False
 
 
+def test_poll_cache_payload_respects_group_names():
+    config = _make_config(
+        groupName="Group One + Group Two",
+        groupNames=("Group One", "Group Two"),
+    )
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    cache_store = PollCacheStore(config=config, parser=parser)
+
+    is_valid = cache_store.isValidCachePayload(
+        {
+            "version": POLL_CACHE_VERSION,
+            "groupName": config.groupName,
+            "groupNames": ["Group One", "Different Group"],
+            "month": config.monthWindow.monthKey,
+            "strictMonth": config.strictMonth,
+        },
+        Path("/tmp/pollCache.json"),
+    )
+
+    assert is_valid is False
+
+
 def test_load_poll_cache_ignores_cache_by_default(tmp_path):
     config = _make_config(outputDir=tmp_path)
     parser = PollTextParser(config, DEFAULT_SELECTORS)
@@ -992,6 +1014,19 @@ def test_build_scraped_poll_key_uses_source_hint_when_date_only_comes_from_dom()
     )
 
     assert poll_key == f"{poll_record.pollTitle}|{source_text[:80]}"
+
+
+def test_group_poll_key_includes_group_name():
+    config = _make_config(groupName="Group One", groupNames=("Group One",))
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    scraper = WhatsAppPollScraper(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        cacheStore=PollCacheStore(config=config, parser=parser),
+    )
+
+    assert scraper.buildGroupPollKey("Group One", "poll-1") == "group one|poll-1"
 
 
 def test_build_poll_records_from_dialog_keeps_short_year_source_dates_when_strict():

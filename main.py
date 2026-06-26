@@ -117,12 +117,36 @@ def loadState() -> dict:
         return {}
 
 
-def saveState(groupName: str, month: str | None) -> None:
+def getStateGroupNames(state: dict) -> list[str]:
+    groupNames = state.get("groupNames")
+    if isinstance(groupNames, list):
+        return [str(name).strip() for name in groupNames if str(name).strip()]
+
+    groupName = state.get("groupName")
+    if groupName:
+        return [str(groupName).strip()]
+
+    return []
+
+
+def normaliseGroupNames(groupNames: list[str] | None) -> list[str]:
+    if not groupNames:
+        return []
+
+    return [name.strip() for name in groupNames if name.strip()]
+
+
+def formatGroupNames(groupNames: list[str] | tuple[str, ...]) -> str:
+    return " + ".join(groupNames)
+
+
+def saveState(groupNames: list[str], month: str | None) -> None:
     stateFile = getStateFile()
     stateFile.parent.mkdir(parents=True, exist_ok=True)
 
     state = {
-        "groupName": groupName,
+        "groupName": groupNames[0] if groupNames else "",
+        "groupNames": groupNames,
         "month": month,
     }
 
@@ -130,17 +154,19 @@ def saveState(groupName: str, month: str | None) -> None:
 
 
 def buildParser(state: dict) -> argparse.ArgumentParser:
+    savedGroupNames = getStateGroupNames(state)
     parser = argparse.ArgumentParser(
-        description="Export WhatsApp poll attendance for a group and month."
+        description="Export WhatsApp poll attendance for one or more groups and a month."
     )
+    parser.set_defaults(savedGroupNames=savedGroupNames)
 
     parser.add_argument(
         "-g",
         "--group",
-        required=not bool(state.get("groupName")),
-        default=state.get("groupName"),
-        dest="groupName",
-        help="exact WhatsApp group name",
+        action="append",
+        dest="groupNames",
+        metavar="GROUP",
+        help="exact WhatsApp group name; repeat for multiple groups",
     )
 
     parser.add_argument(
@@ -181,13 +207,14 @@ def buildParser(state: dict) -> argparse.ArgumentParser:
 def buildConfig(args: argparse.Namespace, dryRun: bool, logLevel: int) -> Config:
     month = normaliseMonthInput(args.month)
     monthWindow = resolveMonthWindow(month)
+    groupNames = tuple(normaliseGroupNames(args.groupNames))
 
-    outputDir = ensureOutputDir(defaultOutputDir(args.groupName, monthWindow))
+    outputDir = ensureOutputDir(defaultOutputDir(groupNames, monthWindow))
     userDataDir = ensureOutputDir(defaultUserDataDir())
 
     # strictMonth defaults to True in RuntimeConfig.
     runtime = RuntimeConfig(
-        groupName=args.groupName,
+        groupName=formatGroupNames(groupNames),
         monthWindow=monthWindow,
         outputDir=outputDir,
         userDataDir=userDataDir,
@@ -201,6 +228,7 @@ def buildConfig(args: argparse.Namespace, dryRun: bool, logLevel: int) -> Config
         resume=False,
         pollTitleFilter=None,
         usePollCache=args.cache,
+        groupNames=groupNames,
     )
 
     return Config(runtime=runtime)
@@ -212,7 +240,7 @@ def buildConfig(args: argparse.Namespace, dryRun: bool, logLevel: int) -> Config
 def run(config: Config) -> None:
     logger = getLogger(level=config.runtime.logLevel)
 
-    logger.value("group", config.runtime.groupName)
+    logger.value("groups", ", ".join(config.runtime.effectiveGroupNames))
     logger.value("dryRun", config.runtime.dryRun)
     logger.value("logLevel", config.runtime.logLevel)
 
@@ -226,8 +254,9 @@ def main() -> None:
     state = loadState()
     parser = buildParser(state)
     args = parser.parse_args()
+    args.groupNames = normaliseGroupNames(args.groupNames) or args.savedGroupNames
 
-    if not args.groupName:
+    if not args.groupNames:
         parser.error("--group is required.")
 
     dryRun = not args.confirm
@@ -242,7 +271,7 @@ def main() -> None:
 
     run(config)
 
-    saveState(groupName=args.groupName, month=normaliseMonthInput(args.month))
+    saveState(groupNames=args.groupNames, month=normaliseMonthInput(args.month))
 
     logger.done("application complete")
 

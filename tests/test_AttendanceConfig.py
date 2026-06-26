@@ -116,6 +116,12 @@ class TestDefaultOutputDir:
 
         assert "2026-03" in str(result)
 
+    def test_includes_multiple_group_names_in_path(self):
+        window = resolveMonthWindow("2026-03")
+        result = defaultOutputDir(["Team One", "Team Two"], window)
+
+        assert "team_one__team_two_2026-03" in str(result)
+
     def test_result_is_inside_output_subdirectory(self):
         window = resolveMonthWindow("2026-03")
         result = defaultOutputDir("Team", window)
