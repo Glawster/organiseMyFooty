@@ -1175,6 +1175,112 @@ class FakeNavigationPage:
         pass
 
 
+class FakeKeyboard:
+    def __init__(self):
+        self.pressed = []
+
+    def press(self, key):
+        self.pressed.append(key)
+
+
+class FakeSearchControl:
+    def __init__(self, *, visible=True, fail_clicks=0):
+        self.visible = visible
+        self.fail_clicks = fail_clicks
+        self.first = self
+        self.clicked = 0
+        self.filled = []
+        self.typed = []
+
+    def is_visible(self, timeout=None):
+        return self.visible
+
+    def click(self, timeout=None):
+        self.clicked += 1
+        if self.clicked <= self.fail_clicks:
+            raise TimeoutError("not clickable yet")
+
+    def fill(self, value):
+        self.filled.append(value)
+
+    def type(self, value, delay=None):
+        self.typed.append(value)
+
+
+class FakeMissingSearchControl(FakeControl):
+    def __init__(self):
+        super().__init__(False)
+
+    def click(self, timeout=None):
+        raise TimeoutError("missing")
+
+
+class FakeTextMatch:
+    def __init__(self):
+        self.first = self
+        self.clicked = False
+
+    def click(self, timeout=None):
+        self.clicked = True
+
+
+class FakeOpenGroupPage:
+    def __init__(self, mapping):
+        self.mapping = mapping
+        self.keyboard = FakeKeyboard()
+        self.text_match = FakeTextMatch()
+        self.waits = []
+
+    def locator(self, selector):
+        return self.mapping.get(selector, FakeMissingSearchControl())
+
+    def get_by_text(self, *_args, **_kwargs):
+        return self.text_match
+
+    def wait_for_timeout(self, value):
+        self.waits.append(value)
+
+
+class FakeReadyPage:
+    def __init__(self, mapping):
+        self.mapping = mapping
+        self.loaded_states = []
+
+    def wait_for_load_state(self, state):
+        self.loaded_states.append(state)
+
+    def locator(self, selector):
+        return self.mapping.get(selector, FakeControl(False))
+
+
+def test_wait_for_whatsapp_ready_uses_ready_indicators():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    chat_list = FakeControl(True)
+    page = FakeReadyPage({"#pane-side": chat_list})
+
+    navigation.waitForWhatsAppReady(page)
+
+    assert page.loaded_states == ["domcontentloaded"]
+
+
+def test_open_group_retries_search_after_reopening_search():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    search_box = FakeSearchControl(fail_clicks=2)
+    activator = FakeSearchControl()
+    page = FakeOpenGroupPage(
+        {
+            '[aria-label="Search or start a new chat"]': search_box,
+            'button[aria-label="Search"]': activator,
+        }
+    )
+
+    navigation.openGroup(page, "Second Group")
+
+    assert page.keyboard.pressed == ["Escape", "Escape"]
+    assert search_box.typed == ["Second Group"]
+    assert page.text_match.clicked is True
+
+
 def test_scroll_chat_to_latest_skips_mouse_wheel_when_preferred_panel_scrolls():
     navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
     page = FakeNavigationPage(

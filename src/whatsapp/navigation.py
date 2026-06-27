@@ -23,7 +23,7 @@ class WhatsAppNavigation:
         deadline = time.time() + max(60, self.config.timeoutMs / 1000)
 
         while time.time() < deadline:
-            for selector in self.selectors.iterSearchSelectors():
+            for selector in self.selectors.iterReadySelectors():
                 try:
                     locator = page.locator(selector).first
                     if locator.is_visible(timeout=1000):
@@ -40,23 +40,68 @@ class WhatsAppNavigation:
     def openGroup(self, page, groupName: str) -> None:
         self.logger.info("opening group: %s", groupName)
 
-        lastError: Exception | None = None
-        for selector in self.selectors.iterSearchSelectors():
-            try:
-                searchBox = page.locator(selector).first
-                searchBox.click(timeout=self.config.timeoutMs)
-                searchBox.fill("")
-                searchBox.type(groupName, delay=40)
-                break
-            except Exception as exc:
-                lastError = exc
-                continue
-        else:
-            raise RuntimeError(f"Unable to find WhatsApp search box: {lastError}")
+        self.prepareForGroupSearch(page)
+        self.typeInSearchBox(page, groupName)
 
         candidate = page.get_by_text(groupName, exact=True).first
         candidate.click(timeout=self.config.timeoutMs)
         self.logger.info("group opened")
+
+    ## search helpers
+
+    def prepareForGroupSearch(self, page) -> None:
+        try:
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(250)
+        except Exception:
+            pass
+
+        self.activateSearch(page)
+
+    def activateSearch(self, page) -> None:
+        for selector in self.selectors.searchActivatorCandidates:
+            try:
+                control = page.locator(selector).first
+                if control.is_visible(timeout=750):
+                    control.click(timeout=2000)
+                    page.wait_for_timeout(300)
+                    return
+            except Exception:
+                continue
+
+    def typeInSearchBox(self, page, groupName: str) -> None:
+        lastError: Exception | None = None
+
+        for attempt in range(2):
+            for selector in self.selectors.iterSearchSelectors():
+                try:
+                    searchBox = page.locator(selector).first
+                    searchBox.click(timeout=self.config.timeoutMs)
+                    self.clearSearchBox(page, searchBox)
+                    searchBox.type(groupName, delay=40)
+                    return
+                except Exception as exc:
+                    lastError = exc
+                    continue
+
+            if attempt == 0:
+                self.logger.info("retrying group search after reopening search")
+                self.prepareForGroupSearch(page)
+
+        raise RuntimeError(f"Unable to find WhatsApp search box: {lastError}")
+
+    def clearSearchBox(self, page, searchBox) -> None:
+        try:
+            searchBox.fill("")
+            return
+        except Exception:
+            pass
+
+        try:
+            page.keyboard.press("Control+A")
+            page.keyboard.press("Backspace")
+        except Exception:
+            pass
 
     def scrollChatToLatest(self, page) -> None:
         script = """
