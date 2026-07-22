@@ -1,3 +1,4 @@
+<!-- synced from Glawster/organiseMyProjects -- do not edit directly -->
 # GitHub Copilot Instructions -- Master Development Guidelines (v2)
 
 # Table of Contents
@@ -9,12 +10,13 @@
 5.  [CLI Design Standards](#cli-design-standards)\
 6.  [Environment & Dependency Policy](#environment--dependency-policy)\
 7.  [Patterns](#patterns)\
-8.  [Error Handling & Logging](#error-handling--logging)\
-9.  [Security Standards](#security-standards)\
-10. [Testing Standards](#testing-standards)\
-11. [Performance Guidelines](#performance-guidelines)\
-12. [Refactoring Guidelines](#refactoring-guidelines)\
-13. [Common Principles to Always Follow](#common-principles-to-always-follow)
+8.  [User Config Pattern](#user-config-pattern)\
+9.  [Error Handling & Logging](#error-handling--logging)\
+10. [Security Standards](#security-standards)\
+11. [Testing Standards](#testing-standards)\
+12. [Performance Guidelines](#performance-guidelines)\
+13. [Refactoring Guidelines](#refactoring-guidelines)\
+14. [Common Principles to Always Follow](#common-principles-to-always-follow)
 
 # Overview
 
@@ -86,7 +88,6 @@ class Example:
     def configSave(self):
         pass
 
-
     ## message
 
     def messageExtract(self):
@@ -94,7 +95,6 @@ class Example:
 
     def messageParse(self):
         pass
-
 
     ## utilities
 
@@ -113,7 +113,7 @@ All applications must have a root entry point:
     └── .github/
         └── additional-copilot-instructions.md
 
-Larger applications may also use `src/` and `ui/` folders:
+Larger applications may also use `src/`, `ui/`, and `qt/` folders:
 
     projectName/
     ├── main.py
@@ -124,7 +124,7 @@ Larger applications may also use `src/` and `ui/` folders:
     │       ├── utils/
     │       └── patterns/
     ├── ui/
-    ├── Qt/ui
+    ├── qt/
     ├── tests/
     ├── requirements.txt
     ├── README.md
@@ -137,6 +137,9 @@ Rules:
 -   `main.py` sets the application logging context with `setApplication()`\
 -   `src/` is optional and should be used for larger apps, reusable core logic, or UI-based apps\
 -   `ui/` is optional and should contain UI orchestration/assets where useful\
+-   Documentation rule: only `README.md` may be at the project root; all other documentation must live under `documentation/`, and documentation file names should use camelCase except for `README.md`\
+-   The README must include a near-top Documentation section that links to every living guide in the repo so it remains the canonical entry point for all docs\
+-   Any routine that produces output files must place them in an `output/` folder directly under the project root\
 -   Core/business logic must remain testable without the UI
 
 # CLI Design Standards
@@ -186,6 +189,7 @@ Never expose `--dry-run` as the CLI flag. Use `dryRun` only as the internal bool
 ## Logging Pattern (logUtils)
 
 All projects must use centralized logging from `organiseMyProjects.logUtils`.
+Do not include "..." manually in log messages. logUtils owns prefixes/suffixes.
 
 ### Application context
 
@@ -271,10 +275,10 @@ def main() -> None:
     logger.done("finished")
 ```
 
-Use this in helper modules (do not import or redefine `thisApplication` outside `main.py`):
+Use this in helper modules (do not use `setApplication()` in helper modules):
 
 ``` python
-from organiseMyProjects.logUtils import getLogger, setApplication
+from organiseMyProjects.logUtils import getLogger
 
 logger = getLogger()
 ```
@@ -297,7 +301,7 @@ logger.value("month", config.monthWindow.monthKey)
 logger.value("dryRun", config.dryRun)
 ```
 
-Avoid:
+Output Examples:
 
 ``` python
 logger.doing("scanning files")           # → scanning files...
@@ -343,17 +347,11 @@ if not dryRun:
 
 Do not manually build dry-run prefixes or branch log wording by `dryRun`.
 
-### Value Logging Rule
+### Info/Value Logging Rule
 
-Use `logger.value("name", value)` when logging a single variable.
-
-Do not use:
-- `logger.info("name: %s", value)`
-- f-strings in `doing()` or `done()`
-
-Use `logger.info()` only for:
-- multiple variables
-- narrative messages
+Use logger.info() for narrative messages with no variables, or formatted messages with two or more variables.
+Use logger.value("name", value) for exactly one variable.
+No other logger methods should receive variable arguments.
 
 ### No fallback logging
 
@@ -362,7 +360,7 @@ External dependencies must fail fast. Never silently replace `logUtils`:
 ``` python
 # Do not do this
 try:
-    from organiseMyProjects.logUtils import getLogger
+    from organiseMyProjects.logUtils import getLogger, setApplication
 except Exception:
     import logging
 ```
@@ -467,6 +465,24 @@ if not dryRun:
 -   Check for stop file periodically\
 -   Exit gracefully if detected\
 -   Log cancellation event
+
+# User Config Pattern
+
+Applications store user-level defaults and preferences in:
+
+```text
+~/.config/<application>/config.json
+```
+
+Rules:
+
+-   Use JSON objects, not `key=value` files\
+-   Preserve existing and unknown keys when updating config\
+-   Use clear, stable key names such as `source`, `month`, or `groupName`\
+-   Validate config values before using them\
+-   Create the config directory only when writing config\
+-   Preference updates, such as saving a `--source` override, may be written even during dry-run\
+-   Dry-run guards apply to workflow side effects, not to preference persistence unless the user explicitly asks for config preview only
 
 # Error Handling & Logging
 
