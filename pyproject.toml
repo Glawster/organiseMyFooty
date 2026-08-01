@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "organiseMyFooty"
+version = "0.1.0"
+description = "Export WhatsApp poll attendance reports"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "playwright",
+]
+
+[project.scripts]
+organiseMyFooty = "organiseMyFooty.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["attendanceConfig", "socialMediaSummary", "whatsappAttendance"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["whatsapp*", "organiseMyFooty*"]

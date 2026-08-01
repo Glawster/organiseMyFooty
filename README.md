@@ -26,6 +26,7 @@ exporting voter names and attendance counts to CSV files.
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
 playwright install chromium
 ```
 
@@ -56,6 +57,22 @@ Run from the `src/` directory (or add `src/` to `PYTHONPATH`):
 
 ```bash
 python main.py \
+  --group "My Footy Group" \
+  --month 2026-03
+```
+
+You can also run it as a module from the repository root:
+
+```bash
+python -m organiseMyFooty \
+  --group "My Footy Group" \
+  --month 2026-03
+```
+
+Or run the installed console script:
+
+```bash
+organiseMyFooty \
   --group "My Footy Group" \
   --month 2026-03
 ```

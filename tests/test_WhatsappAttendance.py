@@ -1022,8 +1022,8 @@ def test_log_visible_poll_candidates_logs_each_new_poll_once():
 
     scraper.logVisiblePollCandidates(["poll-a", "poll-b"], set())
 
-    assert scraper.logger.has_call("info", "found poll: %s", "Monday 7pm LLC")
-    assert scraper.logger.has_call("info", "found poll: %s", "Wednesday 8pm LLC")
+    assert scraper.logger.has_call("debug", "found poll: %s", "Monday 7pm LLC")
+    assert scraper.logger.has_call("debug", "found poll: %s", "Wednesday 8pm LLC")
 
 
 def test_log_visible_poll_candidates_skips_polls_seen_in_previous_passes():
@@ -1040,15 +1040,33 @@ def test_log_visible_poll_candidates_skips_polls_seen_in_previous_passes():
     }
     scraper.discovery = StubDiscoveryWithSourceTexts(sourceTexts)
 
+    beforeMondayCount = sum(
+        call == ("debug", ("found poll: %s", "Monday 7pm LLC"), {})
+        for call in scraper.logger.messages
+    )
+    beforeWednesdayCount = sum(
+        call == ("debug", ("found poll: %s", "Wednesday 8pm LLC"), {})
+        for call in scraper.logger.messages
+    )
+
     scraper.logVisiblePollCandidates(
         ["poll-a", "poll-b"], {f"poll-a|{sourceTexts['poll-a']}"}
     )
 
-    assert scraper.logger.has_call("info", "found poll: %s", "Wednesday 8pm LLC")
-    assert not scraper.logger.has_call("info", "found poll: %s", "Monday 7pm LLC")
+    afterMondayCount = sum(
+        call == ("debug", ("found poll: %s", "Monday 7pm LLC"), {})
+        for call in scraper.logger.messages
+    )
+    afterWednesdayCount = sum(
+        call == ("debug", ("found poll: %s", "Wednesday 8pm LLC"), {})
+        for call in scraper.logger.messages
+    )
+
+    assert afterMondayCount == beforeMondayCount
+    assert afterWednesdayCount == beforeWednesdayCount + 1
 
 
-def test_build_scraped_poll_key_uses_source_hint_when_date_only_comes_from_dom():
+def test_build_scraped_poll_key_uses_normalized_title_and_date():
     parser = PollTextParser(_make_config(strictMonth=True), DEFAULT_SELECTORS)
     scraper = WhatsAppPollScraper(
         config=_make_config(strictMonth=True),
@@ -1074,7 +1092,7 @@ def test_build_scraped_poll_key_uses_source_hint_when_date_only_comes_from_dom()
         fallbackPollKey="fallback-key",
     )
 
-    assert poll_key == f"{poll_record.pollTitle}|{source_text[:80]}"
+    assert poll_key == "20260505|tuesday 10.30am llc"
 
 
 def test_build_poll_key_for_locator_uses_dom_header_date_for_cache_lookup():
