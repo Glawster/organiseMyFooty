@@ -7,7 +7,7 @@ from attendanceConfig import RuntimeConfig
 from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
 from whatsapp.cache import PollCacheStore
 from whatsapp.models import PollRecord
-from whatsapp.navigation import WhatsAppNavigation
+from whatsapp.navigation import GroupNotFoundError, WhatsAppNavigation
 from whatsapp.parsing import PollTextParser
 from whatsapp.pollDialog import PollDialog
 from whatsapp.pollDiscovery import PollDiscovery
@@ -101,7 +101,6 @@ class WhatsAppPollScraper:
 
         recordsByPollKey = self.cacheStore.loadPollCache()
         pollCount = 0
-        seenPollKeys: set[str] = set()
         self.stopAfterCurrentPass = False
 
         with sync_playwright() as playwright:
@@ -115,52 +114,77 @@ class WhatsAppPollScraper:
                 page = browserContext.new_page()
                 page.goto(self.selectors.webUrl)
                 self.navigation.waitForWhatsAppReady(page)
-                self.navigation.openGroup(page, self.config.groupName)
-                self.navigation.scrollChatToLatest(page)
 
-                for scrollPass in range(120):
-                    pollLocators = self.discovery.findPollCards(page)
-                    self.logger.debug(
-                        "candidate poll cards found: %s (scroll pass %s)",
-                        len(pollLocators),
-                        scrollPass + 1,
-                    )
+                for groupName in self.config.effectiveGroupNames:
+                    self.logger.info("collecting polls from group: %s", groupName)
+                    seenPollKeys: set[str] = set()
+                    self.stopAfterCurrentPass = False
 
-                    if pollLocators:
-                        self.logVisiblePollCandidates(pollLocators, seenPollKeys)
+                    try:
+                        self.navigation.openGroup(page, groupName)
+                    except GroupNotFoundError as exc:
+                        self.logger.warning("%s; skipping group", exc)
+                        continue
+                    self.navigation.scrollChatToLatest(page)
 
-                    for locator in pollLocators:
-                        sourceText = self.discovery.extractPollSourceText(locator)
-                        messageKey = self.discovery.extractMessageKey(locator)
-                        key = self.discovery.buildPollLocatorKey(messageKey, sourceText)
+                    for scrollPass in range(120):
+                        pollLocators = self.discovery.findPollCards(page)
+                        self.logger.debug(
+                            "candidate poll cards found: %s (scroll pass %s)",
+                            len(pollLocators),
+                            scrollPass + 1,
+                        )
 
-                        if key in seenPollKeys:
-                            continue
+                        if pollLocators:
+                            self.logVisiblePollCandidates(pollLocators, seenPollKeys)
 
-                        seenPollKeys.add(key)
+                        for locator in pollLocators:
+                            sourceText = self.discovery.extractPollSourceText(locator)
+                            messageKey = self.discovery.extractMessageKey(locator)
+                            key = self.discovery.buildPollLocatorKey(
+                                messageKey, sourceText
+                            )
+
+                            if key in seenPollKeys:
+                                continue
+
+                            seenPollKeys.add(key)
+
+                            if self.hasReachedPollLimit(pollCount):
+                                break
+
+                            pollCount += self.scrapePollLocator(
+                                page=page,
+                                locator=locator,
+                                index=pollCount + 1,
+                                totalPolls=len(seenPollKeys),
+                                recordsByPollKey=recordsByPollKey,
+                                groupName=groupName,
+                            )
 
                         if self.hasReachedPollLimit(pollCount):
                             break
 
-                        pollCount += self.scrapePollLocator(
-                            page=page,
-                            locator=locator,
-                            index=pollCount + 1,
-                            totalPolls=len(seenPollKeys),
-                            recordsByPollKey=recordsByPollKey,
-                        )
+                        if self.stopAfterCurrentPass:
+                            break
+
+                        if self.shouldStopForStrictLookback(pollLocators):
+                            break
+
+                        self.navigation.scrollChatHistory(page, scrollPasses=1)
+                        page.wait_for_timeout(900)
 
                     if self.hasReachedPollLimit(pollCount):
+                        self.logger.info(
+                            "stopping before remaining groups because poll limit was reached"
+                        )
                         break
 
-                    if self.stopAfterCurrentPass:
-                        break
-
-                    if self.shouldStopForStrictLookback(pollLocators):
-                        break
-
-                    self.navigation.scrollChatHistory(page, scrollPasses=1)
-                    page.wait_for_timeout(900)
+                    self.logger.info(
+                        "finished group: %s (polls collected so far: %s)",
+                        groupName,
+                        pollCount,
+                    )
 
             finally:
                 browserContext.close()
@@ -177,7 +201,9 @@ class WhatsAppPollScraper:
         index: int,
         totalPolls: int,
         recordsByPollKey: OrderedDict[str, list[PollRecord]],
+        groupName: str | None = None,
     ) -> int:
+        groupName = groupName or self.config.groupName
         sourceText = self.discovery.extractPollSourceText(locator)
 
         if self.shouldSkipForTitleFilter(sourceText):
@@ -192,9 +218,12 @@ class WhatsAppPollScraper:
             self.stopAfterCurrentPass = True
             return 0
 
-        pollKey, pollTitle, _pollDateText = self.parser.buildPollKeyFromSourceText(
-            sourceText
+        basePollKey, pollTitle, _pollDateText = self.buildPollKeyForLocator(
+            sourceText=sourceText,
+            pollTitle=pollTitle,
+            rawDateText=rawDateText,
         )
+        pollKey = self.buildGroupPollKey(groupName, basePollKey)
         shouldRecheck = self.cacheStore.shouldRecheckPoll(index, totalPolls)
         cachedRecords = recordsByPollKey.get(pollKey)
 
@@ -244,11 +273,12 @@ class WhatsAppPollScraper:
                     record.sourceHint.replace("\n", " | "),
                 )
 
-            pollKey = self.buildScrapedPollKey(
+            basePollKey = self.buildScrapedPollKey(
                 sourceText=sourceText,
                 pollRecord=pollRecords[0],
-                fallbackPollKey=pollKey,
+                fallbackPollKey=basePollKey,
             )
+            pollKey = self.buildGroupPollKey(groupName, basePollKey)
             recordsByPollKey[pollKey] = deduplicateRecords(pollRecords)
             return 1
         except Exception as exc:
@@ -329,6 +359,26 @@ class WhatsAppPollScraper:
         )
 
         return pollKey or fallbackPollKey
+
+    def buildPollKeyForLocator(
+        self,
+        sourceText: str,
+        pollTitle: str,
+        rawDateText: str,
+    ) -> tuple[str, str, str]:
+        pollDateText = self.parser.normaliseDateText(rawDateText)
+        if pollDateText:
+            pollKey = self.parser.buildPollKeyFromParts(
+                pollTitle=pollTitle,
+                pollDateText=pollDateText,
+                sourceHint=sourceText[:240],
+            )
+            return pollKey, pollTitle, pollDateText
+
+        return self.parser.buildPollKeyFromSourceText(sourceText)
+
+    def buildGroupPollKey(self, groupName: str, pollKey: str) -> str:
+        return f"{groupName.casefold()}|{pollKey}"
 
     ## logging helpers
 

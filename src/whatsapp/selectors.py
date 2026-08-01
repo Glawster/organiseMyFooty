@@ -17,7 +17,7 @@ class WhatsAppSelectors:
 
     # Broad selectors — any one visible means WhatsApp Web has fully loaded.
     # Used only by waitForWhatsAppReady; add new entries here if the UI changes.
-    readyIndicatorCandidates: tuple[str,] = (
+    readyIndicatorCandidates: tuple[str, ...] = (
         '[aria-label="Search or start a new chat"]',
         '[placeholder="Search or start a new chat"]',
         '[data-testid="chat-list"]',
@@ -30,10 +30,13 @@ class WhatsAppSelectors:
 
     # Interactive search-box selectors — must be clickable/typeable.
     # Used by openGroup to find and focus the search input.
-    searchBoxCandidates: tuple[str,] = (
+    searchBoxCandidates: tuple[str, ...] = (
         '[aria-label="Search or start a new chat"]',
         '[placeholder="Search or start a new chat"]',
+        '[placeholder="Search"]',
         '[data-testid="search-input"]',
+        '[contenteditable="true"][role="textbox"][aria-label*="Search"]',
+        '[contenteditable="true"][role="textbox"][title*="Search"]',
         '[title="Search or start a new chat"]',
         # Legacy data-tab attributes (older WhatsApp Web builds)
         '[contenteditable="true"][data-tab="3"]',
@@ -41,7 +44,16 @@ class WhatsAppSelectors:
         'div[role="textbox"]',
     )
 
-    chatHeaderCandidates: tuple[str,] = (
+    searchActivatorCandidates: tuple[str, ...] = (
+        '[aria-label="Search or start a new chat"]',
+        '[title="Search or start a new chat"]',
+        'button[aria-label="Search"]',
+        '[role="button"][aria-label="Search"]',
+        '[data-testid="chat-list-search"]',
+        '[data-icon="search"]',
+    )
+
+    chatHeaderCandidates: tuple[str, ...] = (
         "header [title]",
         'header span[dir="auto"]',
     )

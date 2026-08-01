@@ -64,12 +64,20 @@ def _fake_draw_box(*_args, **_kwargs):
     return None
 
 
+def _fake_set_application(*_args, **_kwargs):
+    """Ignore application logger setup in unit tests."""
+    return None
+
+
 _stubbed_organiseMyProjects = types.ModuleType("organiseMyProjects")
 _stubbed_logUtils = types.ModuleType("organiseMyProjects.logUtils")
 setattr(_stubbed_logUtils, "getLogger", _fake_get_logger)
 setattr(_stubbed_logUtils, "drawBox", _fake_draw_box)
+setattr(_stubbed_logUtils, "setApplication", _fake_set_application)
 setattr(_stubbed_organiseMyProjects, "logUtils", _stubbed_logUtils)
 sys.modules.setdefault("organiseMyProjects", _stubbed_organiseMyProjects)
 sys.modules.setdefault("organiseMyProjects.logUtils", _stubbed_logUtils)
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+_repo_root = Path(__file__).parent.parent
+sys.path.insert(0, str(_repo_root))
+sys.path.insert(0, str(_repo_root / "src"))

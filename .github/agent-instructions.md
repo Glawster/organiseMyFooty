@@ -164,6 +164,144 @@ Rules:
 
 # CLI Design Standards
 
+CLI interfaces should be consistent, discoverable and composable so that knowledge gained using one project naturally transfers to every other project.
+
+## Command Structure
+
+CLI applications should use subcommands to group related functionality.
+
+Prefer:
+
+    application object action [options]
+
+Examples:
+
+    git branch create
+    docker image ls
+    kubectl get pods
+
+Project examples:
+
+    eolas family create
+    eolas member add
+    eolas report generate
+
+    sportVision match analyse
+    sportVision camera calibrate
+
+    wowAddonHelper zygor install
+
+Avoid exposing large numbers of unrelated top-level options.
+
+Commands perform actions.
+
+Options modify the behaviour of commands.
+
+Prefer grouping functionality using subcommands. Where an application exposes multiple domains of functionality, use the hierarchy:
+
+application object action [options]
+
+Simpler applications may use:
+
+application action [options]
+
+
+
+## Discoverability
+
+Commands should be self-discovering.
+
+Users should be be able to navigate the command hierarchy using `--help` at every level.
+
+Examples:
+
+    app --help
+    app family --help
+    app report --help
+
+Related functionality should normally be implemented using `argparse` subparsers.
+
+## Command Naming
+
+Objects should be nouns.
+
+Examples:
+
+    family
+    member
+    report
+    camera
+    repository
+
+Actions should be verbs.
+
+Aliases may be provided for convenience, but a single canonical command should exist. British English spelling is preferred where applicable (for example `analyse` rather than `analyze`).
+
+## Options
+
+Options modify command behaviour.
+
+Examples:
+
+    --confirm
+    --verbose
+    --quiet
+    --json
+    
+## Universal Options
+
+--help
+--version
+--confirm
+--verbose
+--quiet
+
+## Command Naming Verbs
+
+create
+list
+show
+edit
+delete
+
+import
+export
+
+scan
+analyse
+verify
+
+generate
+
+status
+
+sync
+
+update
+
+start
+stop
+restart
+
+enable
+disable
+
+
+
+
+## Required Behaviour
+
+All CLI applications should:
+
+- Use `argparse`
+- Validate all input paths before use
+- Provide clear `--help` output
+- Exit with status code `0` on success and non-zero on failure
+- Initialise logging from the application entry point
+- Print a clear completion summary where appropriate
+- Support `--confirm` for operations that modify data
+- Default to safe (dry-run) behaviour where destructive operations are possible
+
 All CLI tools must:
 
 -   Use argparse\

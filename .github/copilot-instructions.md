@@ -34,7 +34,7 @@ If any other repository guidance contradicts this file, this file takes preceden
 1.  Core logic must never depend on UI frameworks\
 2.  Business logic must be testable without GUI\
 3.  GUI layers orchestrate --- they do not implement business logic\
-4.  CLI tools must run non-interactively\
+4.  CLI tools must be fully scriptable and capable of running non-interactively\
 5.  File operations must be centralized and reusable\
 6.  Logging must be initialized at entry point\
 7.  Scripts must be safe-by-default\
@@ -164,37 +164,144 @@ Rules:
 
 # CLI Design Standards
 
-All CLI tools must:
+CLI interfaces should be consistent, discoverable and composable so that knowledge gained using one project naturally transfers to every other project.
 
--   Use argparse\
--   Validate paths before processing\
--   Log start and completion\
--   Exit with 0 on success, non-zero on failure\
--   Support --confirm (safe-by-default)\
--   Provide clear help text\
--   Print a completion summary
+## Command Structure
 
-### Required Pattern
+CLI applications should use subcommands to group related functionality.
 
-``` python
-parser.add_argument(
-    "-y",
-    "--confirm",
-    dest="confirm",
-    action="store_true",
-    help="execute changes (default is dry-run)",
-)
-dryRun = not args.confirm
-```
+Prefer:
 
-Command behaviour:
+    application object action [options]
 
-| Command | Behaviour |
-| --- | --- |
-| `python main.py` | dry-run / safe preview |
-| `python main.py --confirm` | execute changes |
+Examples:
 
-Never expose `--dry-run` as the CLI flag. Use `dryRun` only as the internal boolean.
+    git branch create
+    docker image ls
+    kubectl get pods
+
+Project examples:
+
+    eolas family create
+    eolas member add
+    eolas report generate
+
+    sportVision match analyse
+    sportVision camera calibrate
+
+    wowAddonHelper zygor install
+
+Avoid exposing large numbers of unrelated top-level options.
+
+Commands perform actions.
+
+Options modify the behaviour of commands.
+
+Prefer grouping functionality using subcommands. Where an application exposes multiple domains of functionality, use the hierarchy:
+
+application object action [options]
+
+Simpler applications may use:
+
+application action [options]
+
+
+
+## Discoverability
+
+Commands should be self-discovering.
+
+Users should be be able to navigate the command hierarchy using `--help` at every level.
+
+Examples:
+
+    app --help
+    app family --help
+    app report --help
+
+Related functionality should normally be implemented using `argparse` subparsers.
+
+## Command Naming
+
+Objects should be nouns.
+
+Examples:
+
+    family
+    member
+    report
+    camera
+    repository
+
+Actions should be verbs.
+
+Aliases may be provided for convenience, but a single canonical command should exist. British English spelling is preferred where applicable (for example `analyse` rather than `analyze`).
+
+## Options
+
+Options modify command behaviour.
+
+Examples:
+
+    --confirm
+    --verbose
+    --quiet
+    --json
+    
+## Universal Options
+
+--help
+--version
+--confirm
+--verbose
+--quiet
+
+## Command Naming Verbs
+
+create
+list
+show
+edit
+delete
+
+import
+export
+
+scan
+analyse
+verify
+
+generate
+
+status
+
+sync
+
+update
+
+start
+stop
+restart
+
+enable
+disable
+
+
+
+
+## Required Behaviour
+
+All CLI applications should:
+
+- Use `argparse`
+- Validate all input paths before use
+- Provide clear `--help` output
+- Exit with status code `0` on success and non-zero on failure
+- Initialise logging from the application entry point
+- Print a clear completion summary where appropriate
+- Support `--confirm` for operations that modify data
+- Default to safe (dry-run) behaviour where destructive operations are possible
+
 
 # Environment & Dependency Policy
 

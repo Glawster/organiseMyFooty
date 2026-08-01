@@ -131,6 +131,36 @@ Do not move completed or retired records: treat the allocated path as a stable
 interface for documentation, prompts, commits and external references. Record
 lifecycle changes in the requirement's status and requirements index instead.
 
+Keep durable prompts under `project/requirements/prompt/`, grouped in a folder
+whose name matches the requirement filename without `.md`. Shared agent
+adapters belong in `project/requirements/prompt/adapters/`. Prompt records stay
+at stable paths after completion so later work can reconstruct how an agent was
+briefed.
+
+The requirements index uses these workflow sections:
+
+- `ToDo`
+- `InProgress`
+- `Completed`
+
+Requirement filenames use a permanent sequential identifier:
+
+```text
+ddd-name.md
+```
+
+- `ddd` is a zero-padded sequential number that is never changed or reused.
+- `name` is a concise camelCase description.
+
+Each project's `project/requirements/README.md` records its next available
+number, status index and any project-specific requirement details. The
+identifier must also appear inside the requirement record.
+
+Living documentation owned by one requirement belongs in a directory named
+after the requirement without its number or `.md` extension:
+
+```text
+project/requirements/features/003-viewManagement.md
 The requirements index uses these workflow sections:
 
 - `ToDo`

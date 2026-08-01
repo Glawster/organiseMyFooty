@@ -5,6 +5,13 @@ Python tool for exporting WhatsApp poll attendance from WhatsApp Web.
 Automates collection of footy training/match poll responses from a WhatsApp group,
 exporting voter names and attendance counts to CSV files.
 
+## Documentation
+
+- [Project records](project/README.md)
+- [Copilot instructions](.github/copilot-instructions.md)
+- [Project-specific instructions](.github/additional-copilot-instructions.md)
+- [Repository layout](.github/repositoryLayout.md)
+
 ## Source files
 
 - `src/exportAttendance.py` — CLI entry point
@@ -19,6 +26,7 @@ exporting voter names and attendance counts to CSV files.
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
 playwright install chromium
 ```
 
@@ -40,7 +48,7 @@ once. If the default 120-second window is not enough to scan the code, pass
 a longer timeout:
 
 ```bash
-python main.py --group "My Footy Group" --month 2026-03 --timeout-ms 300000
+python main.py --group "My Footy Group" --month 2026-03
 ```
 
 ## Usage
@@ -48,33 +56,53 @@ python main.py --group "My Footy Group" --month 2026-03 --timeout-ms 300000
 Run from the `src/` directory (or add `src/` to `PYTHONPATH`):
 
 ```bash
-cd src
-python exportAttendance.py \
+python main.py \
   --group "My Footy Group" \
-  --month 2026-03 \
-  --output ~/attendance/footy_2026_03 \
-  --user-data-dir ~/.local/share/organiseMyFooty/profile
+  --month 2026-03
+```
+
+You can also run it as a module from the repository root:
+
+```bash
+python -m organiseMyFooty \
+  --group "My Footy Group" \
+  --month 2026-03
+```
+
+Or run the installed console script:
+
+```bash
+organiseMyFooty \
+  --group "My Footy Group" \
+  --month 2026-03
 ```
 
 For a safe first run (inspect without writing files — default behaviour):
 
 ```bash
-cd src
-python exportAttendance.py --group "My Footy Group" --month 2026-03
+python main.py --group "My Footy Group" --month 2026-03
+```
+
+To combine polls from multiple groups, repeat `--group`:
+
+```bash
+python main.py \
+  --group "My Footy Group" \
+  --group "My Other Footy Group" \
+  --month 2026-03
 ```
 
 To actually write the CSV exports, add `--confirm`:
 
 ```bash
-cd src
-python exportAttendance.py --group "My Footy Group" --month 2026-03 --confirm
+python main.py --group "My Footy Group" --month 2026-03 --confirm
 ```
 
 ## CLI options
 
 | Option | Description |
 |---|---|
-| `--group` | Exact WhatsApp group name (required) |
+| `--group` | Exact WhatsApp group name; repeat to scrape multiple groups (required) |
 | `--month` | Target month in `YYYY-MM` format (default: previous month) |
 | `--output` | Output directory for CSV files |
 | `--user-data-dir` | Persistent browser profile directory |

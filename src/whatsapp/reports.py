@@ -50,7 +50,7 @@ class AttendanceReportBuilder:
     # ## report table utilities
     def buildAttendanceReportRows(self, records: list[PollRecord]) -> list[list[str]]:
         if not records:
-            return [[""], [""], ["name"]]
+            return [["week"], ["date"], ["venue"], ["day"], ["name"]]
 
         pollSessions = self.buildPollSessions(records)
         maxWeek = max(session.weekNumber for session in pollSessions.values())
@@ -91,6 +91,19 @@ class AttendanceReportBuilder:
             for session in columns:
                 row.append(attendance.get((voter, session.pollKey), ""))
             rows.append(row)
+
+        rows.append(
+            ["session total"]
+            + [
+                str(
+                    sum(
+                        attendance.get((voter, session.pollKey), "") == "yes"
+                        for voter in voterNames
+                    )
+                )
+                for session in columns
+            ]
+        )
 
         return rows
 

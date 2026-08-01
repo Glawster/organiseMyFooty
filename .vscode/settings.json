@@ -3,7 +3,6 @@
    "python.testing.unittestEnabled": false,
    "python.testing.nosetestsEnabled": false,
    "python.testing.pytestArgs": [
-      "tests",
-      "--override-ini=python_files=test_[A-Z]*.py"
+      "tests"
    ]
 }

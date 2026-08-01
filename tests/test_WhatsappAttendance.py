@@ -17,7 +17,7 @@ from whatsapp.records import deduplicateRecords
 from whatsapp.cache import PollCacheStore
 from whatsapp.pollDiscovery import PollDiscovery
 from whatsapp.pollDialog import PollDialog
-from whatsapp.navigation import WhatsAppNavigation
+from whatsapp.navigation import GroupNotFoundError, WhatsAppNavigation
 from whatsapp.scraper import WhatsAppPollScraper
 from whatsapp.selectors import DEFAULT_SELECTORS
 from whatsapp.constants import POLL_CACHE_VERSION
@@ -280,6 +280,28 @@ def test_poll_cache_payload_respects_strict_mode():
     assert is_valid is False
 
 
+def test_poll_cache_payload_respects_group_names():
+    config = _make_config(
+        groupName="Group One + Group Two",
+        groupNames=("Group One", "Group Two"),
+    )
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    cache_store = PollCacheStore(config=config, parser=parser)
+
+    is_valid = cache_store.isValidCachePayload(
+        {
+            "version": POLL_CACHE_VERSION,
+            "groupName": config.groupName,
+            "groupNames": ["Group One", "Different Group"],
+            "month": config.monthWindow.monthKey,
+            "strictMonth": config.strictMonth,
+        },
+        Path("/tmp/pollCache.json"),
+    )
+
+    assert is_valid is False
+
+
 def test_load_poll_cache_ignores_cache_by_default(tmp_path):
     config = _make_config(outputDir=tmp_path)
     parser = PollTextParser(config, DEFAULT_SELECTORS)
@@ -330,6 +352,38 @@ def test_load_poll_cache_reads_cache_when_enabled(tmp_path):
 
     assert list(cachedPolls) == ["poll-1"]
     assert cachedPolls["poll-1"][0].voterName == "Alice"
+
+
+def test_load_poll_cache_can_be_forced_for_view_mode(tmp_path):
+    config = _make_config(outputDir=tmp_path, usePollCache=False)
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    cache_store = PollCacheStore(config=config, parser=parser)
+    cache_store.getPollCachePath().write_text(
+        json.dumps(
+            {
+                "version": POLL_CACHE_VERSION,
+                "groupName": config.groupName,
+                "month": config.monthWindow.monthKey,
+                "strictMonth": config.strictMonth,
+                "polls": {
+                    "poll-1": [
+                        {
+                            "pollTitle": "Monday Training",
+                            "pollDateText": "20260301",
+                            "option": "Yes",
+                            "voterName": "Alice",
+                            "sourceHint": "Monday Training",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cachedPolls = cache_store.loadPollCache(force=True)
+
+    assert list(cachedPolls) == ["poll-1"]
 
 
 def test_save_poll_cache_logs_skip_in_dry_run(tmp_path):
@@ -393,12 +447,40 @@ def test_build_attendance_report_rows_supports_date_only_session_dates():
     assert rows[1] == ["date", "02/03/26"]
     assert rows[3] == ["day", "Monday"]
     assert rows[5] == ["Alice", "yes"]
+    assert rows[6] == ["session total", "1"]
+
+
+def test_build_attendance_report_rows_counts_only_yes_votes_in_session_total():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    builder = AttendanceReportBuilder(parser)
+
+    rows = builder.buildAttendanceReportRows(
+        [
+            _record(voterName="Alice", option="Yes"),
+            _record(voterName="Bob", option="No"),
+        ]
+    )
+
+    assert rows[-1] == ["session total", "1"]
+
+
+def test_build_empty_attendance_report_has_all_header_rows():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    builder = AttendanceReportBuilder(parser)
+
+    assert builder.buildAttendanceReportRows([]) == [
+        ["week"],
+        ["date"],
+        ["venue"],
+        ["day"],
+        ["name"],
+    ]
 
 
 def test_write_preview_json_logs_skip_in_dry_run(tmp_path):
     config = _make_config(outputDir=tmp_path, dryRun=True)
     exporter = AttendanceExporter(config)
-    preview_path = tmp_path / "exportPreview.json"
+    preview_path = tmp_path / "exportPreview-2026-03.json"
 
     exporter.writePreviewJson(
         rawRows=[{"pollTitle": "Training"}], summaryRows=[], reportRows=[]
@@ -427,6 +509,7 @@ def test_build_social_media_summary_text_from_attendance_report_rows(tmp_path):
         ["name", "19:00", "10:30"],
         ["Al", "yes", ""],
         ["Bob", "no", "yes"],
+        ["session total", "1", "1"],
     ]
 
     assert exporter.buildSocialMediaSummaryText(reportRows) == (
@@ -440,7 +523,7 @@ def test_build_social_media_summary_text_from_attendance_report_rows(tmp_path):
 def test_write_social_media_summary_text_logs_skip_in_dry_run(tmp_path):
     config = _make_config(outputDir=tmp_path, dryRun=True)
     exporter = AttendanceExporter(config)
-    summaryPath = tmp_path / "socialMediaSummary.txt"
+    summaryPath = tmp_path / "socialMediaSummary-2026-03.txt"
 
     exporter.writeSocialMediaSummaryText([])
 
@@ -939,8 +1022,8 @@ def test_log_visible_poll_candidates_logs_each_new_poll_once():
 
     scraper.logVisiblePollCandidates(["poll-a", "poll-b"], set())
 
-    assert scraper.logger.has_call("info", "found poll: %s", "Monday 7pm LLC")
-    assert scraper.logger.has_call("info", "found poll: %s", "Wednesday 8pm LLC")
+    assert scraper.logger.has_call("debug", "found poll: %s", "Monday 7pm LLC")
+    assert scraper.logger.has_call("debug", "found poll: %s", "Wednesday 8pm LLC")
 
 
 def test_log_visible_poll_candidates_skips_polls_seen_in_previous_passes():
@@ -957,15 +1040,33 @@ def test_log_visible_poll_candidates_skips_polls_seen_in_previous_passes():
     }
     scraper.discovery = StubDiscoveryWithSourceTexts(sourceTexts)
 
+    beforeMondayCount = sum(
+        call == ("debug", ("found poll: %s", "Monday 7pm LLC"), {})
+        for call in scraper.logger.messages
+    )
+    beforeWednesdayCount = sum(
+        call == ("debug", ("found poll: %s", "Wednesday 8pm LLC"), {})
+        for call in scraper.logger.messages
+    )
+
     scraper.logVisiblePollCandidates(
         ["poll-a", "poll-b"], {f"poll-a|{sourceTexts['poll-a']}"}
     )
 
-    assert scraper.logger.has_call("info", "found poll: %s", "Wednesday 8pm LLC")
-    assert not scraper.logger.has_call("info", "found poll: %s", "Monday 7pm LLC")
+    afterMondayCount = sum(
+        call == ("debug", ("found poll: %s", "Monday 7pm LLC"), {})
+        for call in scraper.logger.messages
+    )
+    afterWednesdayCount = sum(
+        call == ("debug", ("found poll: %s", "Wednesday 8pm LLC"), {})
+        for call in scraper.logger.messages
+    )
+
+    assert afterMondayCount == beforeMondayCount
+    assert afterWednesdayCount == beforeWednesdayCount + 1
 
 
-def test_build_scraped_poll_key_uses_source_hint_when_date_only_comes_from_dom():
+def test_build_scraped_poll_key_uses_normalized_title_and_date():
     parser = PollTextParser(_make_config(strictMonth=True), DEFAULT_SELECTORS)
     scraper = WhatsAppPollScraper(
         config=_make_config(strictMonth=True),
@@ -991,7 +1092,53 @@ def test_build_scraped_poll_key_uses_source_hint_when_date_only_comes_from_dom()
         fallbackPollKey="fallback-key",
     )
 
-    assert poll_key == f"{poll_record.pollTitle}|{source_text[:80]}"
+    assert poll_key == "20260505|tuesday 10.30am llc"
+
+
+def test_build_poll_key_for_locator_uses_dom_header_date_for_cache_lookup():
+    parser = PollTextParser(_make_config(strictMonth=True), DEFAULT_SELECTORS)
+    scraper = WhatsAppPollScraper(
+        config=_make_config(strictMonth=True),
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        cacheStore=PollCacheStore(config=_make_config(strictMonth=True), parser=parser),
+    )
+
+    poll_key, poll_title, poll_date_text = scraper.buildPollKeyForLocator(
+        sourceText=(
+            "Wednesday 11am Football Factory\n"
+            "Select one or more\n"
+            "Yes\n"
+            "8\n"
+            "No\n"
+            "18\n"
+            "13:44\n"
+            "View votes"
+        ),
+        pollTitle="Wednesday 11am Football Factory",
+        rawDateText="Tuesday",
+    )
+
+    assert poll_title == "Wednesday 11am Football Factory"
+    assert poll_date_text
+    assert poll_key == parser.buildPollKeyFromParts(
+        pollTitle=poll_title,
+        pollDateText=poll_date_text,
+        sourceHint="",
+    )
+
+
+def test_group_poll_key_includes_group_name():
+    config = _make_config(groupName="Group One", groupNames=("Group One",))
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    scraper = WhatsAppPollScraper(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        cacheStore=PollCacheStore(config=config, parser=parser),
+    )
+
+    assert scraper.buildGroupPollKey("Group One", "poll-1") == "group one|poll-1"
 
 
 def test_build_poll_records_from_dialog_keeps_short_year_source_dates_when_strict():
@@ -1138,6 +1285,131 @@ class FakeNavigationPage:
 
     def wait_for_timeout(self, *_args):
         pass
+
+
+class FakeKeyboard:
+    def __init__(self):
+        self.pressed = []
+
+    def press(self, key):
+        self.pressed.append(key)
+
+
+class FakeSearchControl:
+    def __init__(self, *, visible=True, fail_clicks=0):
+        self.visible = visible
+        self.fail_clicks = fail_clicks
+        self.first = self
+        self.clicked = 0
+        self.filled = []
+        self.typed = []
+
+    def is_visible(self, timeout=None):
+        return self.visible
+
+    def click(self, timeout=None):
+        self.clicked += 1
+        if self.clicked <= self.fail_clicks:
+            raise TimeoutError("not clickable yet")
+
+    def fill(self, value):
+        self.filled.append(value)
+
+    def type(self, value, delay=None):
+        self.typed.append(value)
+
+
+class FakeMissingSearchControl(FakeControl):
+    def __init__(self):
+        super().__init__(False)
+
+    def click(self, timeout=None):
+        raise TimeoutError("missing")
+
+
+class FakeTextMatch:
+    def __init__(self):
+        self.first = self
+        self.clicked = False
+
+    def click(self, timeout=None):
+        self.clicked = True
+
+
+class FakeMissingTextMatch(FakeTextMatch):
+    def click(self, timeout=None):
+        raise TimeoutError("missing group")
+
+
+class FakeOpenGroupPage:
+    def __init__(self, mapping):
+        self.mapping = mapping
+        self.keyboard = FakeKeyboard()
+        self.text_match = FakeTextMatch()
+        self.waits = []
+
+    def locator(self, selector):
+        return self.mapping.get(selector, FakeMissingSearchControl())
+
+    def get_by_text(self, *_args, **_kwargs):
+        return self.text_match
+
+    def wait_for_timeout(self, value):
+        self.waits.append(value)
+
+
+class FakeReadyPage:
+    def __init__(self, mapping):
+        self.mapping = mapping
+        self.loaded_states = []
+
+    def wait_for_load_state(self, state):
+        self.loaded_states.append(state)
+
+    def locator(self, selector):
+        return self.mapping.get(selector, FakeControl(False))
+
+
+def test_wait_for_whatsapp_ready_uses_ready_indicators():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    chat_list = FakeControl(True)
+    page = FakeReadyPage({"#pane-side": chat_list})
+
+    navigation.waitForWhatsAppReady(page)
+
+    assert page.loaded_states == ["domcontentloaded"]
+
+
+def test_open_group_retries_search_after_reopening_search():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    search_box = FakeSearchControl(fail_clicks=2)
+    activator = FakeSearchControl()
+    page = FakeOpenGroupPage(
+        {
+            '[aria-label="Search or start a new chat"]': search_box,
+            'button[aria-label="Search"]': activator,
+        }
+    )
+
+    navigation.openGroup(page, "Second Group")
+
+    assert page.keyboard.pressed == ["Escape", "Escape"]
+    assert search_box.typed == ["Second Group"]
+    assert page.text_match.clicked is True
+
+
+def test_open_group_reports_missing_exact_group_name():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    search_box = FakeSearchControl()
+    page = FakeOpenGroupPage({'[aria-label="Search or start a new chat"]': search_box})
+    page.text_match = FakeMissingTextMatch()
+
+    try:
+        navigation.openGroup(page, "Missing Group")
+    except GroupNotFoundError as exc:
+        assert str(exc) == ('WhatsApp group not found with exact name: "Missing Group"')
+    else:
+        raise AssertionError("expected GroupNotFoundError")
 
 
 def test_scroll_chat_to_latest_skips_mouse_wheel_when_preferred_panel_scrolls():

@@ -1,87 +1,34 @@
-#!/usr/bin/env python3
+"""Installable CLI entrypoint for organiseMyFooty."""
 
 from __future__ import annotations
 
-import sys
-import json
 import argparse
+import json
 import logging
-
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
-# -------------------------------------------------------------------
-# logging setup (must be top-level)
-# -------------------------------------------------------------------
-from organiseMyProjects.logUtils import getLogger, setApplication  # type: ignore
-
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-thisApplication = Path(__file__).parent.name
-setApplication(thisApplication)
-
-logger = getLogger(includeConsole=False)
-
-# -------------------------------------------------------------------
-# imports (after sys.path tweak)
-# -------------------------------------------------------------------
-from attendanceConfig import (  # noqa: E402
+from attendanceConfig import (
     RuntimeConfig,
     defaultOutputDir,
     defaultUserDataDir,
     ensureOutputDir,
     resolveMonthWindow,
 )
-from whatsappAttendance import AttendanceExporter  # noqa: E402
+from organiseMyProjects.logUtils import getLogger, setApplication  # type: ignore
+from whatsappAttendance import AttendanceExporter
+
+APPLICATION_NAME = "organiseMyFooty"
+
+setApplication(APPLICATION_NAME)
+logger = getLogger(includeConsole=False)
 
 
-# -------------------------------------------------------------------
-# config wrapper (optional but keeps structure clean)
-# -------------------------------------------------------------------
 @dataclass
 class Config:
     runtime: RuntimeConfig
 
-
-def serialiseRuntimeConfig(runtime: RuntimeConfig) -> dict:
-    return {
-        "groupName": runtime.groupName,
-        "groupNames": list(runtime.groupNames),
-        "monthWindow": {
-            "monthKey": runtime.monthWindow.monthKey,
-            "startDate": runtime.monthWindow.startDate.isoformat(),
-            "endDate": runtime.monthWindow.endDate.isoformat(),
-            "displayName": runtime.monthWindow.displayName,
-        },
-        "outputDir": str(runtime.outputDir),
-        "userDataDir": str(runtime.userDataDir),
-        "headless": runtime.headless,
-        "dryRun": runtime.dryRun,
-        "timeoutMs": runtime.timeoutMs,
-        "logLevel": runtime.logLevel,
-        "limitPolls": runtime.limitPolls,
-        "browserChannel": runtime.browserChannel,
-        "includeNoVotes": runtime.includeNoVotes,
-        "resume": runtime.resume,
-        "pollTitleFilter": runtime.pollTitleFilter,
-        "usePollCache": runtime.usePollCache,
-        "strictMonth": runtime.strictMonth,
-        "myName": runtime.myName,
-        "effectiveGroupNames": list(runtime.effectiveGroupNames),
-    }
-
-
-def serialiseCachedPolls(recordsByPollKey) -> dict:
-    return {
-        pollKey: [record.__dict__ for record in records]
-        for pollKey, records in recordsByPollKey.items()
-    }
-
-
-# -------------------------------------------------------------------
-# CLI
-# -------------------------------------------------------------------
 
 _MONTH_LOOKUP = {
     "jan": 1,
@@ -137,7 +84,7 @@ def normaliseMonthInput(monthInput: str | None) -> str | None:
 
 
 def getStateFile() -> Path:
-    return Path.home() / ".config" / thisApplication / "state.json"
+    return Path.home() / ".config" / APPLICATION_NAME / "state.json"
 
 
 def loadState() -> dict:
@@ -248,11 +195,6 @@ def buildParser(state: dict) -> argparse.ArgumentParser:
     return parser
 
 
-# -------------------------------------------------------------------
-# CONFIG BUILD
-# -------------------------------------------------------------------
-
-
 def buildConfig(args: argparse.Namespace, dryRun: bool, logLevel: int) -> Config:
     month = normaliseMonthInput(args.month)
     monthWindow = resolveMonthWindow(month)
@@ -261,7 +203,6 @@ def buildConfig(args: argparse.Namespace, dryRun: bool, logLevel: int) -> Config
     outputDir = ensureOutputDir(defaultOutputDir(groupNames, monthWindow))
     userDataDir = ensureOutputDir(defaultUserDataDir())
 
-    # strictMonth defaults to True in RuntimeConfig.
     runtime = RuntimeConfig(
         groupName=formatGroupNames(groupNames),
         monthWindow=monthWindow,
@@ -283,15 +224,47 @@ def buildConfig(args: argparse.Namespace, dryRun: bool, logLevel: int) -> Config
     return Config(runtime=runtime)
 
 
-# -------------------------------------------------------------------
-# RUN
-# -------------------------------------------------------------------
-def run(config: Config) -> None:
-    logger = getLogger(level=config.runtime.logLevel)
+def serialiseRuntimeConfig(runtime: RuntimeConfig) -> dict:
+    return {
+        "groupName": runtime.groupName,
+        "groupNames": list(runtime.groupNames),
+        "monthWindow": {
+            "monthKey": runtime.monthWindow.monthKey,
+            "startDate": runtime.monthWindow.startDate.isoformat(),
+            "endDate": runtime.monthWindow.endDate.isoformat(),
+            "displayName": runtime.monthWindow.displayName,
+        },
+        "outputDir": str(runtime.outputDir),
+        "userDataDir": str(runtime.userDataDir),
+        "headless": runtime.headless,
+        "dryRun": runtime.dryRun,
+        "timeoutMs": runtime.timeoutMs,
+        "logLevel": runtime.logLevel,
+        "limitPolls": runtime.limitPolls,
+        "browserChannel": runtime.browserChannel,
+        "includeNoVotes": runtime.includeNoVotes,
+        "resume": runtime.resume,
+        "pollTitleFilter": runtime.pollTitleFilter,
+        "usePollCache": runtime.usePollCache,
+        "strictMonth": runtime.strictMonth,
+        "myName": runtime.myName,
+        "effectiveGroupNames": list(runtime.effectiveGroupNames),
+    }
 
-    logger.value("groups", ", ".join(config.runtime.effectiveGroupNames))
-    logger.value("dryRun", config.runtime.dryRun)
-    logger.value("logLevel", config.runtime.logLevel)
+
+def serialiseCachedPolls(recordsByPollKey) -> dict:
+    return {
+        pollKey: [record.__dict__ for record in records]
+        for pollKey, records in recordsByPollKey.items()
+    }
+
+
+def run(config: Config) -> None:
+    appLogger = getLogger(level=config.runtime.logLevel)
+
+    appLogger.value("groups", ", ".join(config.runtime.effectiveGroupNames))
+    appLogger.value("dryRun", config.runtime.dryRun)
+    appLogger.value("logLevel", config.runtime.logLevel)
 
     AttendanceExporter(config.runtime).run()
 
@@ -310,9 +283,6 @@ def viewCache(config: Config) -> None:
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
 
-# -------------------------------------------------------------------
-# MAIN
-# -------------------------------------------------------------------
 def main() -> None:
     state = loadState()
     parser = buildParser(state)
@@ -324,11 +294,9 @@ def main() -> None:
 
     dryRun = not args.confirm
     logLevel = logging.DEBUG if args.debug else logging.INFO
+    appLogger = getLogger(includeConsole=True, dryRun=dryRun, level=logLevel)
 
-    # REQUIRED logging pattern
-    logger = getLogger(includeConsole=True, dryRun=dryRun, level=logLevel)
-
-    logger.doing("starting application")
+    appLogger.doing("starting application")
 
     config = buildConfig(args, dryRun, logLevel)
 
@@ -345,14 +313,6 @@ def main() -> None:
         return
 
     run(config)
-
     saveState(groupNames=args.groupNames, month=normaliseMonthInput(args.month))
 
-    logger.done("application complete")
-
-
-# -------------------------------------------------------------------
-# ENTRY POINT
-# -------------------------------------------------------------------
-if __name__ == "__main__":
-    main()
+    appLogger.done("application complete")
