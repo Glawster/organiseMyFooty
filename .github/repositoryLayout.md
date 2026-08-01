@@ -1,3 +1,4 @@
+<!-- synced from Glawster/organiseMyProjects -- do not edit directly -->
 # Repository layout
 
 This managed guide explains what belongs in each top-level directory and where
@@ -114,7 +115,6 @@ normally be ignored unless an export is deliberately approved for publication.
 | --- | --- |
 | `project/project.yaml` | Current project purpose, scope, audience, risks and milestones. |
 | `project/requirements/features/` | Requirement records at every lifecycle stage, kept at stable paths. |
-| `project/requirements/prompt/` | Version-controlled canonical agent prompts and reusable agent adapters. |
 | `project/requirements/templates/` | Templates used to create consistent project records. |
 | `project/adr/` | Significant project-shaping decisions and their consequences. |
 | `project/reviews/` | Point-in-time assessments that should not be mistaken for living guidance. |
@@ -161,6 +161,31 @@ after the requirement without its number or `.md` extension:
 
 ```text
 project/requirements/features/003-viewManagement.md
+The requirements index uses these workflow sections:
+
+- `ToDo`
+- `In Progress`
+- `Completed`
+
+Requirement filenames use a permanent project identifier:
+
+```text
+<PREFIX>-ddd-name.md
+```
+
+- `<PREFIX>` is the owning project's stable uppercase identifier.
+- `ddd` is a zero-padded sequential number that is never changed or reused.
+- `name` is a concise camelCase description.
+
+Each project's `project/requirements/README.md` records its prefix, next
+available number, status index and any project-specific requirement details.
+The identifier must also appear inside the requirement record.
+
+Living documentation owned by one requirement belongs in a directory named
+after the requirement without its prefix, number or `.md` extension:
+
+```text
+project/requirements/features/FMP-003-viewManagement.md
 documentation/viewManagement/
 ```
 
