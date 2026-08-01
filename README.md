@@ -5,6 +5,13 @@ Python tool for exporting WhatsApp poll attendance from WhatsApp Web.
 Automates collection of footy training/match poll responses from a WhatsApp group,
 exporting voter names and attendance counts to CSV files.
 
+## Documentation
+
+- [Project records](project/README.md)
+- [Copilot instructions](.github/copilot-instructions.md)
+- [Project-specific instructions](.github/additional-copilot-instructions.md)
+- [Repository layout](.github/repositoryLayout.md)
+
 ## Source files
 
 - `src/exportAttendance.py` — CLI entry point

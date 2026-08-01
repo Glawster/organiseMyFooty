@@ -108,25 +108,25 @@ class TestDefaultOutputDir:
         window = resolveMonthWindow("2026-03")
         result = defaultOutputDir("My Group!", window)
 
-        assert "my_group_" in str(result)
+        assert result == Path.cwd() / "output"
 
     def test_includes_month_key_in_path(self):
         window = resolveMonthWindow("2026-03")
         result = defaultOutputDir("Team", window)
 
-        assert "2026-03" in str(result)
+        assert result == Path.cwd() / "output"
 
     def test_includes_multiple_group_names_in_path(self):
         window = resolveMonthWindow("2026-03")
         result = defaultOutputDir(["Team One", "Team Two"], window)
 
-        assert "team_one__team_two_2026-03" in str(result)
+        assert result == Path.cwd() / "output"
 
     def test_result_is_inside_output_subdirectory(self):
         window = resolveMonthWindow("2026-03")
         result = defaultOutputDir("Team", window)
 
-        assert result.parts[-3] == "output" or "output" in result.parts
+        assert result == Path.cwd() / "output"
 
 
 # ---------------------------------------------------------------------------

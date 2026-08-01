@@ -28,11 +28,13 @@ class PollCacheStore:
 
     # ## cache path utilities
     def getPollCachePath(self) -> Path:
-        return self.config.outputDir / "pollCache.json"
+        return (
+            self.config.outputDir / f"pollCache-{self.config.monthWindow.monthKey}.json"
+        )
 
     # ## cache read utilities
-    def loadPollCache(self) -> OrderedDict[str, list[PollRecord]]:
-        if not self.config.usePollCache:
+    def loadPollCache(self, force: bool = False) -> OrderedDict[str, list[PollRecord]]:
+        if not force and not self.config.usePollCache:
             self.logger.info("poll cache ignored")
             return OrderedDict()
 

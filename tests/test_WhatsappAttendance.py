@@ -354,6 +354,38 @@ def test_load_poll_cache_reads_cache_when_enabled(tmp_path):
     assert cachedPolls["poll-1"][0].voterName == "Alice"
 
 
+def test_load_poll_cache_can_be_forced_for_view_mode(tmp_path):
+    config = _make_config(outputDir=tmp_path, usePollCache=False)
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    cache_store = PollCacheStore(config=config, parser=parser)
+    cache_store.getPollCachePath().write_text(
+        json.dumps(
+            {
+                "version": POLL_CACHE_VERSION,
+                "groupName": config.groupName,
+                "month": config.monthWindow.monthKey,
+                "strictMonth": config.strictMonth,
+                "polls": {
+                    "poll-1": [
+                        {
+                            "pollTitle": "Monday Training",
+                            "pollDateText": "20260301",
+                            "option": "Yes",
+                            "voterName": "Alice",
+                            "sourceHint": "Monday Training",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cachedPolls = cache_store.loadPollCache(force=True)
+
+    assert list(cachedPolls) == ["poll-1"]
+
+
 def test_save_poll_cache_logs_skip_in_dry_run(tmp_path):
     config = _make_config(outputDir=tmp_path, dryRun=True)
     parser = PollTextParser(config, DEFAULT_SELECTORS)
@@ -448,7 +480,7 @@ def test_build_empty_attendance_report_has_all_header_rows():
 def test_write_preview_json_logs_skip_in_dry_run(tmp_path):
     config = _make_config(outputDir=tmp_path, dryRun=True)
     exporter = AttendanceExporter(config)
-    preview_path = tmp_path / "exportPreview.json"
+    preview_path = tmp_path / "exportPreview-2026-03.json"
 
     exporter.writePreviewJson(
         rawRows=[{"pollTitle": "Training"}], summaryRows=[], reportRows=[]
@@ -491,7 +523,7 @@ def test_build_social_media_summary_text_from_attendance_report_rows(tmp_path):
 def test_write_social_media_summary_text_logs_skip_in_dry_run(tmp_path):
     config = _make_config(outputDir=tmp_path, dryRun=True)
     exporter = AttendanceExporter(config)
-    summaryPath = tmp_path / "socialMediaSummary.txt"
+    summaryPath = tmp_path / "socialMediaSummary-2026-03.txt"
 
     exporter.writeSocialMediaSummaryText([])
 

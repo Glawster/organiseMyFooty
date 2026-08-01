@@ -36,6 +36,11 @@ class AttendanceExporter:
             cacheStore=self.cacheStore,
         )
 
+    def getMonthStampedPath(self, stem: str, suffix: str) -> Path:
+        return (
+            self.config.outputDir / f"{stem}-{self.config.monthWindow.monthKey}{suffix}"
+        )
+
     # ## export orchestration
     def run(self) -> None:
         self.logger.doing("attendance export")
@@ -75,15 +80,18 @@ class AttendanceExporter:
             writer.writerows(rows)
 
     def writePollRows(self, rawRows: list[dict]) -> None:
+        pollsPath = self.getMonthStampedPath("polls", ".csv")
         if self.config.dryRun:
             self.logger.info(
-                "dry run: skipping polls.csv write (%s rows)", len(rawRows)
+                "dry run: skipping polls.csv write (%s rows): %s",
+                len(rawRows),
+                pollsPath,
             )
             return
-        self.logger.action("write polls.csv rows: %s", len(rawRows))
+        self.logger.action("write polls.csv rows: %s: %s", len(rawRows), pollsPath)
 
         writeCsv(
-            self.config.outputDir / "polls.csv",
+            pollsPath,
             rawRows,
             [
                 "pollTitle",
@@ -96,6 +104,7 @@ class AttendanceExporter:
         )
 
     def writeReportRows(self, reportRows: list[list[str]]) -> None:
+        reportPath = self.getMonthStampedPath("attendanceReport", ".csv")
         attendeeRowCount = sum(
             bool(
                 row and row[0].strip() and row[0].strip().casefold() != "session total"
@@ -104,28 +113,37 @@ class AttendanceExporter:
         )
         if self.config.dryRun:
             self.logger.info(
-                "dry run: skipping attendanceReport.csv write (%s rows)",
+                "dry run: skipping attendanceReport.csv write (%s rows): %s",
                 attendeeRowCount,
+                reportPath,
             )
             return
-        self.logger.action("write attendanceReport.csv rows: %s", attendeeRowCount)
+        self.logger.action(
+            "write attendanceReport.csv rows: %s: %s", attendeeRowCount, reportPath
+        )
 
         self.writeAttendanceReportCsv(
-            self.config.outputDir / "attendanceReport.csv",
+            reportPath,
             reportRows,
         )
 
     def writeSummaryRows(self, summaryRows: list[dict]) -> None:
+        summaryPath = self.getMonthStampedPath("attendanceSummary", ".csv")
         if self.config.dryRun:
             self.logger.info(
-                "dry run: skipping attendanceSummary.csv write (%s rows)",
+                "dry run: skipping attendanceSummary.csv write (%s rows): %s",
                 len(summaryRows),
+                summaryPath,
             )
             return
-        self.logger.action("write attendanceSummary.csv rows: %s", len(summaryRows))
+        self.logger.action(
+            "write attendanceSummary.csv rows: %s: %s",
+            len(summaryRows),
+            summaryPath,
+        )
 
         writeCsv(
-            self.config.outputDir / "attendanceSummary.csv",
+            summaryPath,
             summaryRows,
             ["name", "yesCount", "noCount", "totalVotes", "pollsResponded"],
         )
@@ -191,7 +209,7 @@ class AttendanceExporter:
         return "Attendance summary"
 
     def writeSocialMediaSummaryText(self, reportRows: list[list[str]]) -> None:
-        summaryPath = self.config.outputDir / "socialMediaSummary.txt"
+        summaryPath = self.getMonthStampedPath("socialMediaSummary", ".txt")
         summaryText = self.buildSocialMediaSummaryText(reportRows)
 
         if self.config.dryRun:
@@ -210,7 +228,7 @@ class AttendanceExporter:
         summaryRows: list[dict],
         reportRows: list[list[str]],
     ) -> None:
-        previewPath = self.config.outputDir / "exportPreview.json"
+        previewPath = self.getMonthStampedPath("exportPreview", ".json")
         payload = {
             "groupName": self.config.groupName,
             "groupNames": list(self.config.effectiveGroupNames),

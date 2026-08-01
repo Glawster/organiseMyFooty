@@ -44,6 +44,41 @@ class Config:
     runtime: RuntimeConfig
 
 
+def serialiseRuntimeConfig(runtime: RuntimeConfig) -> dict:
+    return {
+        "groupName": runtime.groupName,
+        "groupNames": list(runtime.groupNames),
+        "monthWindow": {
+            "monthKey": runtime.monthWindow.monthKey,
+            "startDate": runtime.monthWindow.startDate.isoformat(),
+            "endDate": runtime.monthWindow.endDate.isoformat(),
+            "displayName": runtime.monthWindow.displayName,
+        },
+        "outputDir": str(runtime.outputDir),
+        "userDataDir": str(runtime.userDataDir),
+        "headless": runtime.headless,
+        "dryRun": runtime.dryRun,
+        "timeoutMs": runtime.timeoutMs,
+        "logLevel": runtime.logLevel,
+        "limitPolls": runtime.limitPolls,
+        "browserChannel": runtime.browserChannel,
+        "includeNoVotes": runtime.includeNoVotes,
+        "resume": runtime.resume,
+        "pollTitleFilter": runtime.pollTitleFilter,
+        "usePollCache": runtime.usePollCache,
+        "strictMonth": runtime.strictMonth,
+        "myName": runtime.myName,
+        "effectiveGroupNames": list(runtime.effectiveGroupNames),
+    }
+
+
+def serialiseCachedPolls(recordsByPollKey) -> dict:
+    return {
+        pollKey: [record.__dict__ for record in records]
+        for pollKey, records in recordsByPollKey.items()
+    }
+
+
 # -------------------------------------------------------------------
 # CLI
 # -------------------------------------------------------------------
@@ -190,6 +225,20 @@ def buildParser(state: dict) -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--view",
+        dest="viewCache",
+        action="store_true",
+        help="view cached poll records instead of running an export",
+    )
+
+    parser.add_argument(
+        "--config",
+        dest="showConfig",
+        action="store_true",
+        help="print the resolved runtime configuration and exit",
+    )
+
+    parser.add_argument(
         "-d",
         "--debug",
         action="store_true",
@@ -247,6 +296,20 @@ def run(config: Config) -> None:
     AttendanceExporter(config.runtime).run()
 
 
+def viewCache(config: Config) -> None:
+    exporter = AttendanceExporter(config.runtime)
+    recordsByPollKey = exporter.cacheStore.loadPollCache(force=True)
+
+    payload = {
+        "groupNames": list(config.runtime.effectiveGroupNames),
+        "month": config.runtime.monthWindow.monthKey,
+        "cachePath": str(exporter.cacheStore.getPollCachePath()),
+        "polls": serialiseCachedPolls(recordsByPollKey),
+    }
+
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+
+
 # -------------------------------------------------------------------
 # MAIN
 # -------------------------------------------------------------------
@@ -256,7 +319,7 @@ def main() -> None:
     args = parser.parse_args()
     args.groupNames = normaliseGroupNames(args.groupNames) or args.savedGroupNames
 
-    if not args.groupNames:
+    if not args.groupNames and not (args.showConfig or args.viewCache):
         parser.error("--group is required.")
 
     dryRun = not args.confirm
@@ -268,6 +331,18 @@ def main() -> None:
     logger.doing("starting application")
 
     config = buildConfig(args, dryRun, logLevel)
+
+    if args.showConfig:
+        print(
+            json.dumps(
+                serialiseRuntimeConfig(config.runtime), indent=2, ensure_ascii=False
+            )
+        )
+        return
+
+    if args.viewCache:
+        viewCache(config)
+        return
 
     run(config)
 

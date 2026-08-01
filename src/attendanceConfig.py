@@ -85,20 +85,10 @@ def ensureOutputDir(path: Path) -> Path:
     return path
 
 
-def defaultOutputDir(groupName: str | Sequence[str], monthWindow: MonthWindow) -> Path:
-    if isinstance(groupName, str):
-        groupNames = [groupName]
-    else:
-        groupNames = list(groupName)
-
-    safeGroup = "__".join(
-        "".join(ch if ch.isalnum() else "_" for ch in name).strip("_").lower()
-        for name in groupNames
-        if name.strip()
-    )
-    if not safeGroup:
-        safeGroup = "whatsapp_groups"
-    return Path.cwd() / "output" / f"{safeGroup}_{monthWindow.monthKey}"
+def defaultOutputDir(
+    _groupName: str | Sequence[str], _monthWindow: MonthWindow
+) -> Path:
+    return Path.cwd() / "output"
 
 
 def defaultUserDataDir() -> Path:
