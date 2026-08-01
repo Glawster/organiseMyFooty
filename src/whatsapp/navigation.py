@@ -9,6 +9,10 @@ from whatsapp.selectors import WhatsAppSelectors
 logger = getLogger()
 
 
+class GroupNotFoundError(RuntimeError):
+    pass
+
+
 class WhatsAppNavigation:
     def __init__(self, config: RuntimeConfig, selectors: WhatsAppSelectors):
         self.config = config
@@ -44,8 +48,58 @@ class WhatsAppNavigation:
         self.typeInSearchBox(page, groupName)
 
         candidate = page.get_by_text(groupName, exact=True).first
-        candidate.click(timeout=self.config.timeoutMs)
+        try:
+            candidate.click(timeout=self.config.timeoutMs)
+        except Exception as exc:
+            raise GroupNotFoundError(
+                f'WhatsApp group not found with exact name: "{groupName}"'
+            ) from exc
+        self.waitForChatPanel(page)
         self.logger.info("group opened")
+
+    def waitForChatPanel(self, page) -> None:
+        try:
+            page.wait_for_selector(
+                '[data-testid="conversation-panel-messages"]',
+                timeout=self.config.timeoutMs,
+            )
+        except Exception:
+            page.wait_for_timeout(1000)
+
+    def clickJumpToLatestControls(self, page) -> bool:
+        for selector in (
+            '[aria-label*="bottom" i]',
+            '[aria-label*="latest" i]',
+            '[title*="bottom" i]',
+            '[title*="latest" i]',
+            'button:has([data-icon="down"])',
+            'span[data-icon="down"]',
+        ):
+            try:
+                control = page.locator(selector).last
+                if control.is_visible(timeout=300):
+                    control.click(timeout=1000)
+                    page.wait_for_timeout(700)
+                    self.logger.debug("clicked jump-to-latest control: %s", selector)
+                    return True
+            except Exception:
+                continue
+
+        return False
+
+    def pressJumpToLatestKeys(self, page) -> None:
+        try:
+            panel = page.locator('[data-testid="conversation-panel-messages"]').first
+            panel.click(timeout=1000)
+        except Exception:
+            pass
+
+        for key in ("End", "Control+End"):
+            try:
+                page.keyboard.press(key)
+                page.wait_for_timeout(500)
+            except Exception:
+                continue
 
     ## search helpers
 
@@ -104,6 +158,9 @@ class WhatsAppNavigation:
             pass
 
     def scrollChatToLatest(self, page) -> None:
+        self.clickJumpToLatestControls(page)
+        self.pressJumpToLatestKeys(page)
+
         script = """
         () => {
             const isScrollable = (el) => {
@@ -134,43 +191,77 @@ class WhatsAppNavigation:
                 '[data-testid="conversation-panel-messages"]'
             );
             const preferredTarget = findScrollableAncestor(preferredPanel);
+            const elements = Array.from(document.querySelectorAll('*'));
+            const scrollables = elements
+                .filter((el) => isScrollable(el))
+                .map((el) => ({
+                    el,
+                    dataTestId: el.getAttribute('data-testid'),
+                    scrollHeight: el.scrollHeight,
+                    clientHeight: el.clientHeight,
+                    scrollTop: el.scrollTop,
+                    text: (el.innerText || '').slice(0, 120),
+                }))
+                .sort((a, b) =>
+                    (b.scrollHeight - b.clientHeight) -
+                    (a.scrollHeight - a.clientHeight)
+                );
 
-            if (!preferredTarget) {
+            if (!preferredTarget && !scrollables.length) {
                 return {
                     didScroll: false,
                     usedPreferredTarget: false,
-                    reason: 'no preferred target',
+                    reason: 'no scrollable candidates',
                 };
             }
 
-            const before = preferredTarget.scrollTop;
-            preferredTarget.scrollTop = preferredTarget.scrollHeight;
+            const targets = preferredTarget
+                ? [preferredTarget]
+                : scrollables.slice(0, 5).map((item) => item.el);
+            const results = targets.map((target) => {
+                const before = target.scrollTop;
+                target.scrollTop = target.scrollHeight;
+                return {
+                    didScroll: target.scrollTop !== before,
+                    before,
+                    after: target.scrollTop,
+                    scrollHeight: target.scrollHeight,
+                    clientHeight: target.clientHeight,
+                    dataTestId: target.getAttribute('data-testid'),
+                    text: (target.innerText || '').slice(0, 120),
+                };
+            });
+            const changed = results.find((item) => item.didScroll) || results[0];
 
             return {
-                didScroll: preferredTarget.scrollTop !== before,
-                before,
-                after: preferredTarget.scrollTop,
-                scrollHeight: preferredTarget.scrollHeight,
-                clientHeight: preferredTarget.clientHeight,
-                dataTestId: preferredTarget.getAttribute('data-testid'),
+                ...changed,
                 usedPreferredTarget: true,
-                text: (preferredTarget.innerText || '').slice(0, 120),
+                candidateCount: scrollables.length,
             };
         }
         """
 
         result = None
-        try:
-            result = page.evaluate(script)
-            self.logger.debug("chat jump-to-latest result: %s", result)
-        except Exception as exc:
-            self.logger.warning(
-                "Unable to jump chat to latest, falling back to mouse wheel: %s",
-                exc,
-            )
+        for attempt in range(5):
+            try:
+                result = page.evaluate(script)
+                self.logger.debug("chat jump-to-latest result: %s", result)
+            except Exception as exc:
+                self.logger.warning(
+                    "Unable to jump chat to latest, falling back to mouse wheel: %s",
+                    exc,
+                )
 
-        if not result or not result.get("usedPreferredTarget"):
+            if result and result.get("usedPreferredTarget"):
+                page.wait_for_timeout(500)
+                continue
+
+            if attempt < 4:
+                page.wait_for_timeout(500)
+                continue
+
             page.mouse.wheel(0, 2500)
+            page.wait_for_timeout(500)
 
         page.wait_for_timeout(1200)
 

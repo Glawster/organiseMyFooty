@@ -96,15 +96,19 @@ class AttendanceExporter:
         )
 
     def writeReportRows(self, reportRows: list[list[str]]) -> None:
+        attendeeRowCount = sum(
+            bool(
+                row and row[0].strip() and row[0].strip().casefold() != "session total"
+            )
+            for row in reportRows[5:]
+        )
         if self.config.dryRun:
             self.logger.info(
                 "dry run: skipping attendanceReport.csv write (%s rows)",
-                max(0, len(reportRows) - 3),
+                attendeeRowCount,
             )
             return
-        self.logger.action(
-            "write attendanceReport.csv rows: %s", max(0, len(reportRows) - 3)
-        )
+        self.logger.action("write attendanceReport.csv rows: %s", attendeeRowCount)
 
         self.writeAttendanceReportCsv(
             self.config.outputDir / "attendanceReport.csv",
@@ -143,7 +147,11 @@ class AttendanceExporter:
         totalSessions = len(sessionIndexes)
         sessionLabel = "session" if totalSessions == 1 else "sessions"
         lines = [title, f"{totalSessions} {sessionLabel}"]
-        voterRows = [row for row in reportRows[5:] if row and row[0].strip()]
+        voterRows = [
+            row
+            for row in reportRows[5:]
+            if row and row[0].strip() and row[0].strip().casefold() != "session total"
+        ]
         voterNameWidth = max((len(row[0].strip()) for row in voterRows), default=0)
 
         for row in voterRows:
@@ -156,7 +164,8 @@ class AttendanceExporter:
             yesCount = statuses.count("yes")
 
             lines.append(
-                f"{voterName:<{voterNameWidth}} ... " f"{yesCount}/{totalSessions}"
+                f"- {voterName:<{voterNameWidth}}... "
+                f"{yesCount}/{totalSessions} sessions attended"
             )
 
         return "\n".join(lines)

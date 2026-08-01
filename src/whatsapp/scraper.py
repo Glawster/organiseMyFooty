@@ -7,7 +7,7 @@ from attendanceConfig import RuntimeConfig
 from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
 from whatsapp.cache import PollCacheStore
 from whatsapp.models import PollRecord
-from whatsapp.navigation import WhatsAppNavigation
+from whatsapp.navigation import GroupNotFoundError, WhatsAppNavigation
 from whatsapp.parsing import PollTextParser
 from whatsapp.pollDialog import PollDialog
 from whatsapp.pollDiscovery import PollDiscovery
@@ -120,7 +120,11 @@ class WhatsAppPollScraper:
                     seenPollKeys: set[str] = set()
                     self.stopAfterCurrentPass = False
 
-                    self.navigation.openGroup(page, groupName)
+                    try:
+                        self.navigation.openGroup(page, groupName)
+                    except GroupNotFoundError as exc:
+                        self.logger.warning("%s; skipping group", exc)
+                        continue
                     self.navigation.scrollChatToLatest(page)
 
                     for scrollPass in range(120):
@@ -214,8 +218,10 @@ class WhatsAppPollScraper:
             self.stopAfterCurrentPass = True
             return 0
 
-        basePollKey, pollTitle, _pollDateText = self.parser.buildPollKeyFromSourceText(
-            sourceText
+        basePollKey, pollTitle, _pollDateText = self.buildPollKeyForLocator(
+            sourceText=sourceText,
+            pollTitle=pollTitle,
+            rawDateText=rawDateText,
         )
         pollKey = self.buildGroupPollKey(groupName, basePollKey)
         shouldRecheck = self.cacheStore.shouldRecheckPoll(index, totalPolls)
@@ -353,6 +359,23 @@ class WhatsAppPollScraper:
         )
 
         return pollKey or fallbackPollKey
+
+    def buildPollKeyForLocator(
+        self,
+        sourceText: str,
+        pollTitle: str,
+        rawDateText: str,
+    ) -> tuple[str, str, str]:
+        pollDateText = self.parser.normaliseDateText(rawDateText)
+        if pollDateText:
+            pollKey = self.parser.buildPollKeyFromParts(
+                pollTitle=pollTitle,
+                pollDateText=pollDateText,
+                sourceHint=sourceText[:240],
+            )
+            return pollKey, pollTitle, pollDateText
+
+        return self.parser.buildPollKeyFromSourceText(sourceText)
 
     def buildGroupPollKey(self, groupName: str, pollKey: str) -> str:
         return f"{groupName.casefold()}|{pollKey}"

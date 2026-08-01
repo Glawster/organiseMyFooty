@@ -17,7 +17,7 @@ from whatsapp.records import deduplicateRecords
 from whatsapp.cache import PollCacheStore
 from whatsapp.pollDiscovery import PollDiscovery
 from whatsapp.pollDialog import PollDialog
-from whatsapp.navigation import WhatsAppNavigation
+from whatsapp.navigation import GroupNotFoundError, WhatsAppNavigation
 from whatsapp.scraper import WhatsAppPollScraper
 from whatsapp.selectors import DEFAULT_SELECTORS
 from whatsapp.constants import POLL_CACHE_VERSION
@@ -415,6 +415,34 @@ def test_build_attendance_report_rows_supports_date_only_session_dates():
     assert rows[1] == ["date", "02/03/26"]
     assert rows[3] == ["day", "Monday"]
     assert rows[5] == ["Alice", "yes"]
+    assert rows[6] == ["session total", "1"]
+
+
+def test_build_attendance_report_rows_counts_only_yes_votes_in_session_total():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    builder = AttendanceReportBuilder(parser)
+
+    rows = builder.buildAttendanceReportRows(
+        [
+            _record(voterName="Alice", option="Yes"),
+            _record(voterName="Bob", option="No"),
+        ]
+    )
+
+    assert rows[-1] == ["session total", "1"]
+
+
+def test_build_empty_attendance_report_has_all_header_rows():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    builder = AttendanceReportBuilder(parser)
+
+    assert builder.buildAttendanceReportRows([]) == [
+        ["week"],
+        ["date"],
+        ["venue"],
+        ["day"],
+        ["name"],
+    ]
 
 
 def test_write_preview_json_logs_skip_in_dry_run(tmp_path):
@@ -449,6 +477,7 @@ def test_build_social_media_summary_text_from_attendance_report_rows(tmp_path):
         ["name", "19:00", "10:30"],
         ["Al", "yes", ""],
         ["Bob", "no", "yes"],
+        ["session total", "1", "1"],
     ]
 
     assert exporter.buildSocialMediaSummaryText(reportRows) == (
@@ -1016,6 +1045,39 @@ def test_build_scraped_poll_key_uses_source_hint_when_date_only_comes_from_dom()
     assert poll_key == f"{poll_record.pollTitle}|{source_text[:80]}"
 
 
+def test_build_poll_key_for_locator_uses_dom_header_date_for_cache_lookup():
+    parser = PollTextParser(_make_config(strictMonth=True), DEFAULT_SELECTORS)
+    scraper = WhatsAppPollScraper(
+        config=_make_config(strictMonth=True),
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        cacheStore=PollCacheStore(config=_make_config(strictMonth=True), parser=parser),
+    )
+
+    poll_key, poll_title, poll_date_text = scraper.buildPollKeyForLocator(
+        sourceText=(
+            "Wednesday 11am Football Factory\n"
+            "Select one or more\n"
+            "Yes\n"
+            "8\n"
+            "No\n"
+            "18\n"
+            "13:44\n"
+            "View votes"
+        ),
+        pollTitle="Wednesday 11am Football Factory",
+        rawDateText="Tuesday",
+    )
+
+    assert poll_title == "Wednesday 11am Football Factory"
+    assert poll_date_text
+    assert poll_key == parser.buildPollKeyFromParts(
+        pollTitle=poll_title,
+        pollDateText=poll_date_text,
+        sourceHint="",
+    )
+
+
 def test_group_poll_key_includes_group_name():
     config = _make_config(groupName="Group One", groupNames=("Group One",))
     parser = PollTextParser(config, DEFAULT_SELECTORS)
@@ -1224,6 +1286,11 @@ class FakeTextMatch:
         self.clicked = True
 
 
+class FakeMissingTextMatch(FakeTextMatch):
+    def click(self, timeout=None):
+        raise TimeoutError("missing group")
+
+
 class FakeOpenGroupPage:
     def __init__(self, mapping):
         self.mapping = mapping
@@ -1279,6 +1346,20 @@ def test_open_group_retries_search_after_reopening_search():
     assert page.keyboard.pressed == ["Escape", "Escape"]
     assert search_box.typed == ["Second Group"]
     assert page.text_match.clicked is True
+
+
+def test_open_group_reports_missing_exact_group_name():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    search_box = FakeSearchControl()
+    page = FakeOpenGroupPage({'[aria-label="Search or start a new chat"]': search_box})
+    page.text_match = FakeMissingTextMatch()
+
+    try:
+        navigation.openGroup(page, "Missing Group")
+    except GroupNotFoundError as exc:
+        assert str(exc) == ('WhatsApp group not found with exact name: "Missing Group"')
+    else:
+        raise AssertionError("expected GroupNotFoundError")
 
 
 def test_scroll_chat_to_latest_skips_mouse_wheel_when_preferred_panel_scrolls():
