@@ -47,8 +47,9 @@ class PollDialog:
         except Exception:
             return fallback
 
-    def expandAllVoters(self, panel) -> None:
-        previousText = ""
+    def expandAllVoters(self, panel, initialText: str = "") -> list[str]:
+        """Return distinct panel snapshots while scrolling its virtual voter list."""
+        dialogTexts = [initialText] if initialText.strip() else []
 
         for _ in range(20):
             try:
@@ -64,18 +65,51 @@ class PollDialog:
                     except Exception:
                         continue
 
-                panel.hover()
-                panel.page.mouse.wheel(0, 1200)
+                currentText = panel.inner_text(timeout=2000)
+                if currentText.strip() and currentText not in dialogTexts:
+                    dialogTexts.append(currentText)
+
+                scrollResult = panel.evaluate(
+                    """panel => {
+                        const candidates = [panel, ...panel.querySelectorAll('*')];
+                        const scrollable = candidates
+                            .filter(node => node.scrollHeight > node.clientHeight + 1)
+                            .sort((left, right) =>
+                                (right.scrollHeight - right.clientHeight) -
+                                (left.scrollHeight - left.clientHeight)
+                            )[0];
+                        if (!scrollable) return { moved: false, atEnd: true };
+                        const before = scrollable.scrollTop;
+                        const step = Math.max(scrollable.clientHeight * 0.8, 400);
+                        scrollable.scrollTop = Math.min(
+                            before + step,
+                            scrollable.scrollHeight - scrollable.clientHeight
+                        );
+                        return {
+                            moved: scrollable.scrollTop > before,
+                            atEnd: scrollable.scrollTop + scrollable.clientHeight >=
+                                scrollable.scrollHeight - 1
+                        };
+                    }"""
+                )
+                try:
+                    panel.hover()
+                    panel.page.mouse.wheel(0, 800)
+                except Exception:
+                    pass
                 panel.page.wait_for_timeout(500)
 
                 currentText = panel.inner_text(timeout=2000)
-                if currentText == previousText:
+                if currentText.strip() and currentText not in dialogTexts:
+                    dialogTexts.append(currentText)
+
+                if not scrollResult.get("moved") or scrollResult.get("atEnd"):
                     break
 
-                previousText = currentText
-
             except Exception:
-                return
+                break
+
+        return dialogTexts
 
     def closeDialog(self, page, dialog) -> None:
         for selector in self.selectors.closeDialogCandidates:

@@ -6,10 +6,12 @@ from collections import OrderedDict
 from pathlib import Path
 from datetime import date, datetime
 
+import pytest
+
 from attendanceConfig import MonthWindow, RuntimeConfig
 
 from whatsapp.models import PollRecord
-from whatsapp.pollRecordsBuilder import PollRecordsBuilder
+from whatsapp.pollRecordsBuilder import IncompletePollVotesError, PollRecordsBuilder
 from whatsapp.parsing import PollTextParser
 from whatsapp.reports import AttendanceReportBuilder
 from whatsapp.records import deduplicateRecords
@@ -114,6 +116,26 @@ def test_clean_voter_names():
     assert result == ["Alice"]
 
 
+def test_clean_voter_names_rejects_phone_number_metadata():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+
+    assert parser.cleanVoterNames(["Sammy Leathem", "+44 7810 878563"]) == [
+        "Sammy Leathem"
+    ]
+
+
+def test_extract_option_vote_count_from_poll_card_text():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+
+    assert (
+        parser.extractOptionVoteCountFromText(
+            "Wednesday 11am Football Factory\nYes\n13\nNo\n11",
+            DEFAULT_SELECTORS.yesOptionTexts,
+        )
+        == 13
+    )
+
+
 def test_is_session_in_month_window_returns_true_when_not_strict():
     parser = PollTextParser(_make_config(strictMonth=False), DEFAULT_SELECTORS)
 
@@ -199,6 +221,70 @@ def test_build_poll_records_from_dialog_keeps_out_of_month_when_not_strict():
 
     assert len(records) == 1
     assert records[0].sessionDateText == "20260406 19:00"
+
+
+def test_build_poll_records_combines_virtualised_voter_snapshots():
+    config = _make_config(strictMonth=False)
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    builder = PollRecordsBuilder(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        discovery=StubDiscoveryWithDate("09/06/2026"),
+    )
+    firstSnapshot = (
+        "Wednesday 11am Football Factory\nYes\nYou\nPete\nSammy Leathem\n"
+        "+44 7810 878563\nShe\nTrevor Spiers\n+44 7394 976065\nNo"
+    )
+    secondSnapshot = (
+        "Wednesday 11am Football Factory\nYes\nTerry\nJohn McDonald\nTom\nMina\n"
+        "Eamon Quinn\nJim Davis\nIvaan Gilliland\nKate Robinson\nNo"
+    )
+
+    records = builder.buildPollRecordsFromDialog(
+        locator=None,
+        dialog=None,
+        dialogText=firstSnapshot,
+        dialogTexts=[firstSnapshot, secondSnapshot],
+        sourceText=(
+            "Wednesday 11am Football Factory\nSelect one or more\n"
+            "Yes\n13\nNo\n11\nView votes"
+        ),
+    )
+
+    assert len(records) == 13
+    assert {record.voterName for record in records} >= {
+        "Andy Wilson",
+        "Pete",
+        "Terry",
+        "Kate Robinson",
+    }
+    assert not any(record.voterName.startswith("+44") for record in records)
+
+
+def test_build_poll_records_rejects_incomplete_voter_capture():
+    config = _make_config(strictMonth=False)
+    parser = PollTextParser(config, DEFAULT_SELECTORS)
+    builder = PollRecordsBuilder(
+        config=config,
+        selectors=DEFAULT_SELECTORS,
+        parser=parser,
+        discovery=StubDiscoveryWithDate("09/06/2026"),
+    )
+
+    with pytest.raises(IncompletePollVotesError, match="captured 5 of 13"):
+        builder.buildPollRecordsFromDialog(
+            locator=None,
+            dialog=None,
+            dialogText=(
+                "Wednesday 11am Football Factory\nYes\nYou\nPete\n"
+                "Sammy Leathem\nShe\nTrevor Spiers\nNo"
+            ),
+            sourceText=(
+                "Wednesday 11am Football Factory\nSelect one or more\n"
+                "Yes\n13\nNo\n11\nView votes"
+            ),
+        )
 
 
 def test_build_poll_records_from_dialog_prefers_pre_dialog_date():

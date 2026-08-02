@@ -550,6 +550,7 @@ class AttendanceStore:
     def attendanceRecords(self, startDate: date, endDate: date) -> list[PollRecord]:
         rows = self.connection.execute(
             """SELECT s.name, s.session_date, s.start_time, s.venue, a.response, m.display_name,
+                      COALESCE(ss.source_title, '') source_title,
                       COALESCE(ss.source_hint, '') source_hint
                FROM attendance a JOIN sessions s ON s.id=a.session_id
                JOIN members m ON m.id=a.member_id
@@ -560,10 +561,13 @@ class AttendanceStore:
         ).fetchall()
         return [
             PollRecord(
-                pollTitle=" ".join(
-                    part
-                    for part in (row["name"], row["start_time"], row["venue"])
-                    if part
+                pollTitle=row["source_title"]
+                or " ".join(
+                    dict.fromkeys(
+                        part
+                        for part in (row["name"], row["start_time"], row["venue"])
+                        if part
+                    )
                 ),
                 pollDateText=row["session_date"].replace("-", ""),
                 sessionDateText=row["session_date"].replace("-", "")

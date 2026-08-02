@@ -13,6 +13,10 @@ from whatsapp.selectors import WhatsAppSelectors
 logger = getLogger()
 
 
+class IncompletePollVotesError(ValueError):
+    """Raised when WhatsApp's displayed vote count exceeds captured voters."""
+
+
 class PollRecordsBuilder:
     def __init__(
         self,
@@ -36,6 +40,7 @@ class PollRecordsBuilder:
         dialogText: str,
         sourceText: str,
         rawDateText: str = "",
+        dialogTexts: list[str] | None = None,
     ) -> list[PollRecord]:
         pollTitle = self.parser.extractPollTitleFromDialog(dialogText) or (
             self.parser.extractPollTitle(dialog, sourceText=sourceText)
@@ -77,13 +82,30 @@ class PollRecordsBuilder:
             )
             return []
 
-        pollRecords = self.buildOptionRecords(
-            dialogText=dialogText,
-            pollTitle=pollTitle,
-            pollDateText=pollDateText,
-            sessionDateText=sessionDateText,
-            sourceHint=sourceText[:240],
+        pollRecordsByIdentity: dict[tuple[str, str], PollRecord] = {}
+        for snapshotText in dialogTexts or [dialogText]:
+            for record in self.buildOptionRecords(
+                dialogText=snapshotText,
+                pollTitle=pollTitle,
+                pollDateText=pollDateText,
+                sessionDateText=sessionDateText,
+                sourceHint=sourceText[:240],
+            ):
+                identity = (record.option.casefold(), record.voterName.casefold())
+                pollRecordsByIdentity[identity] = record
+
+        pollRecords = list(pollRecordsByIdentity.values())
+        expectedYesVotes = self.parser.extractOptionVoteCountFromText(
+            sourceText, self.selectors.yesOptionTexts
         )
+        actualYesVotes = sum(
+            record.option.casefold() == "yes" for record in pollRecords
+        )
+        if expectedYesVotes is not None and actualYesVotes < expectedYesVotes:
+            raise IncompletePollVotesError(
+                f"captured {actualYesVotes} of {expectedYesVotes} Yes voters"
+            )
+
         self.logger.value("poll vote rows", len(pollRecords))
         return pollRecords
 

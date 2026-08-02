@@ -262,6 +262,8 @@ class PollTextParser:
                 continue
             if re.search(r"\b\d{1,2}:\d{2}\b", value):
                 continue
+            if self._looksLikePhoneNumber(value):
+                continue
             if value.lower() in {"yes", "no"}:
                 continue
             if value.lower() == "you":
@@ -305,6 +307,28 @@ class PollTextParser:
                 captured.append(line)
 
         return self.cleanVoterNames(captured)
+
+    def extractOptionVoteCountFromText(
+        self, text: str, optionTexts: Iterable[str]
+    ) -> int | None:
+        """Extract the displayed vote total belonging to an option heading."""
+        optionNames = {name.casefold() for name in optionTexts}
+        allOptionNames = {
+            name.casefold()
+            for name in self.selectors.yesOptionTexts + self.selectors.noOptionTexts
+        }
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+        for index, line in enumerate(lines):
+            if line.casefold() not in optionNames:
+                continue
+            for candidate in lines[index + 1 :]:
+                if candidate.casefold() in allOptionNames:
+                    break
+                countMatch = re.fullmatch(r"(\d+)(?:\s+votes?)?[^\w]*", candidate)
+                if countMatch:
+                    return int(countMatch.group(1))
+        return None
 
     def extractOptionVoters(self, dialog, optionTexts: Iterable[str]) -> list[str]:
         try:
@@ -357,3 +381,8 @@ class PollTextParser:
         lowered = line.lower().strip()
         compact = lowered.replace(" ", "")
         return compact.isdigit() or bool(re.fullmatch(r"\d+votes?", lowered))
+
+    def _looksLikePhoneNumber(self, value: str) -> bool:
+        if not re.fullmatch(r"\+?[\d\s().-]+", value):
+            return False
+        return sum(character.isdigit() for character in value) >= 7

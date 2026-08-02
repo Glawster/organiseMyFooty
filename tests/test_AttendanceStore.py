@@ -126,6 +126,23 @@ def test_date_range_and_filtered_queries(store):
     )
 
 
+def test_attendance_records_preserve_original_poll_title(store):
+    store.pollReconcile(
+        "Group A",
+        "message-1",
+        [
+            record(
+                title="Wednesday 11am Football Factory",
+                session="20260610 11:00",
+            )
+        ],
+    )
+
+    records = store.attendanceRecords(date(2026, 6, 1), date(2026, 6, 30))
+
+    assert records[0].pollTitle == "Wednesday 11am Football Factory"
+
+
 def test_transaction_rolls_back_incomplete_unit(store):
     with pytest.raises(sqlite3.IntegrityError):
         with store.transaction() as connection:

@@ -307,8 +307,10 @@ class WhatsAppPollScraper:
         dialog = None
         try:
             dialog, dialogText = self.dialog.waitForDialog(page)
-            self.dialog.expandAllVoters(dialog)
+            dialogTexts = self.dialog.expandAllVoters(dialog, initialText=dialogText)
             dialogText = self.dialog.readDialogText(dialog, fallback=dialogText)
+            if dialogText not in dialogTexts:
+                dialogTexts.append(dialogText)
 
             pollRecords = self.recordsBuilder.buildPollRecordsFromDialog(
                 locator=locator,
@@ -316,6 +318,7 @@ class WhatsAppPollScraper:
                 dialogText=dialogText,
                 sourceText=sourceText,
                 rawDateText=rawDateText,
+                dialogTexts=dialogTexts,
             )
             if not pollRecords:
                 return 0
