@@ -37,25 +37,10 @@ the observations behind an effective result. CSV, text, and JSON exports are
 built from stored attendance for the selected report month after collection.
 Use `--view` to inspect that month without scanning.
 
-## Legacy migration
-
-Run a safe preview first, then confirm the import:
-
-```bash
-organiseMyFooty --import-cache output/pollCache-2026-05.json --month 2026-05
-organiseMyFooty --import-cache output/pollCache-2026-05.json --month 2026-05 --confirm
-```
-
-Valid rows are imported idempotently and invalid rows are logged and skipped.
-The JSON file is read-only throughout and remains untouched after success or
-failure.
-
 ## Backup and recovery
 
 Stop collection before copying the database. Back up `attendance.sqlite3`
 together with any adjacent `-wal` and `-shm` files, or use SQLite's online
 backup command/API while the application is running. Recovery is performed by
 moving the unusable database aside and restoring the backup at the same path.
-Never replace a live database while a collection process has it open. Legacy
-JSON caches can also be re-imported into a new empty store if no database
-backup is available.
+Never replace a live database while a collection process has it open.

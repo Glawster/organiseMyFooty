@@ -34,7 +34,6 @@ class RuntimeConfig:
     includeNoVotes: bool
     resume: bool
     pollTitleFilter: Optional[str]
-    usePollCache: bool = False
     strictMonth: bool = True
     myName: str = "Andy Wilson"
     groupNames: tuple[str, ...] = ()

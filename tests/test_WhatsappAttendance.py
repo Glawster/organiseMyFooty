@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import OrderedDict
 from pathlib import Path
 from datetime import date, datetime
-import json
 
 from attendanceConfig import MonthWindow, RuntimeConfig
 
@@ -14,13 +13,11 @@ from whatsapp.pollRecordsBuilder import PollRecordsBuilder
 from whatsapp.parsing import PollTextParser
 from whatsapp.reports import AttendanceReportBuilder
 from whatsapp.records import deduplicateRecords
-from whatsapp.cache import PollCacheStore
 from whatsapp.pollDiscovery import PollDiscovery
 from whatsapp.pollDialog import PollDialog
 from whatsapp.navigation import GroupNotFoundError, WhatsAppNavigation
 from whatsapp.scraper import WhatsAppPollScraper
 from whatsapp.selectors import DEFAULT_SELECTORS
-from whatsapp.constants import POLL_CACHE_VERSION
 from whatsapp.exporter import AttendanceExporter
 
 # ---------------------------------------------------------------------------
@@ -47,7 +44,6 @@ def _make_config(**overrides) -> RuntimeConfig:
         includeNoVotes=False,
         resume=False,
         pollTitleFilter=None,
-        usePollCache=False,
         strictMonth=True,
     )
     defaults.update(overrides)
@@ -262,150 +258,6 @@ def test_build_poll_records_from_dialog_skips_explicit_future_month_when_strict(
     assert records == []
 
 
-def test_poll_cache_payload_respects_strict_mode():
-    config = _make_config(strictMonth=True)
-    parser = PollTextParser(config, DEFAULT_SELECTORS)
-    cache_store = PollCacheStore(config=config, parser=parser)
-
-    is_valid = cache_store.isValidCachePayload(
-        {
-            "version": POLL_CACHE_VERSION,
-            "groupName": config.groupName,
-            "month": config.monthWindow.monthKey,
-            "strictMonth": False,
-        },
-        Path("/tmp/pollCache.json"),
-    )
-
-    assert is_valid is False
-
-
-def test_poll_cache_payload_respects_group_names():
-    config = _make_config(
-        groupName="Group One + Group Two",
-        groupNames=("Group One", "Group Two"),
-    )
-    parser = PollTextParser(config, DEFAULT_SELECTORS)
-    cache_store = PollCacheStore(config=config, parser=parser)
-
-    is_valid = cache_store.isValidCachePayload(
-        {
-            "version": POLL_CACHE_VERSION,
-            "groupName": config.groupName,
-            "groupNames": ["Group One", "Different Group"],
-            "month": config.monthWindow.monthKey,
-            "strictMonth": config.strictMonth,
-        },
-        Path("/tmp/pollCache.json"),
-    )
-
-    assert is_valid is False
-
-
-def test_load_poll_cache_ignores_cache_by_default(tmp_path):
-    config = _make_config(outputDir=tmp_path)
-    parser = PollTextParser(config, DEFAULT_SELECTORS)
-    cache_store = PollCacheStore(config=config, parser=parser)
-    cache_store.getPollCachePath().write_text(
-        "{}",
-        encoding="utf-8",
-    )
-
-    cachedPolls = cache_store.loadPollCache()
-
-    assert cachedPolls == OrderedDict()
-    assert (
-        "info",
-        ("poll cache ignored",),
-        {},
-    ) in cache_store.logger.messages
-
-
-def test_load_poll_cache_reads_cache_when_enabled(tmp_path):
-    config = _make_config(outputDir=tmp_path, usePollCache=True)
-    parser = PollTextParser(config, DEFAULT_SELECTORS)
-    cache_store = PollCacheStore(config=config, parser=parser)
-    cache_store.getPollCachePath().write_text(
-        json.dumps(
-            {
-                "version": POLL_CACHE_VERSION,
-                "groupName": config.groupName,
-                "month": config.monthWindow.monthKey,
-                "strictMonth": config.strictMonth,
-                "polls": {
-                    "poll-1": [
-                        {
-                            "pollTitle": "Monday Training",
-                            "pollDateText": "20260301",
-                            "option": "Yes",
-                            "voterName": "Alice",
-                            "sourceHint": "Monday Training",
-                        }
-                    ]
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    cachedPolls = cache_store.loadPollCache()
-
-    assert list(cachedPolls) == ["poll-1"]
-    assert cachedPolls["poll-1"][0].voterName == "Alice"
-
-
-def test_load_poll_cache_can_be_forced_for_view_mode(tmp_path):
-    config = _make_config(outputDir=tmp_path, usePollCache=False)
-    parser = PollTextParser(config, DEFAULT_SELECTORS)
-    cache_store = PollCacheStore(config=config, parser=parser)
-    cache_store.getPollCachePath().write_text(
-        json.dumps(
-            {
-                "version": POLL_CACHE_VERSION,
-                "groupName": config.groupName,
-                "month": config.monthWindow.monthKey,
-                "strictMonth": config.strictMonth,
-                "polls": {
-                    "poll-1": [
-                        {
-                            "pollTitle": "Monday Training",
-                            "pollDateText": "20260301",
-                            "option": "Yes",
-                            "voterName": "Alice",
-                            "sourceHint": "Monday Training",
-                        }
-                    ]
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    cachedPolls = cache_store.loadPollCache(force=True)
-
-    assert list(cachedPolls) == ["poll-1"]
-
-
-def test_save_poll_cache_logs_skip_in_dry_run(tmp_path):
-    config = _make_config(outputDir=tmp_path, dryRun=True)
-    parser = PollTextParser(config, DEFAULT_SELECTORS)
-    cache_store = PollCacheStore(config=config, parser=parser)
-
-    cache_store.savePollCache({"poll-1": [_record()]})
-
-    assert cache_store.getPollCachePath().exists() is False
-    assert (
-        "action",
-        ("write poll cache: %s", cache_store.getPollCachePath()),
-        {},
-    ) not in (cache_store.logger.messages)
-    assert (
-        "info",
-        ("dry run: skipping poll cache write: %s", cache_store.getPollCachePath()),
-        {},
-    ) in cache_store.logger.messages
-
-
 # ---------------------------------------------------------------------------
 # reports
 # ---------------------------------------------------------------------------
@@ -513,10 +365,7 @@ def test_build_social_media_summary_text_from_attendance_report_rows(tmp_path):
     ]
 
     assert exporter.buildSocialMediaSummaryText(reportRows) == (
-        "May 2026 attendance summary\n"
-        "2 sessions\n"
-        "- Al ... 1/2 sessions attended\n"
-        "- Bob... 1/2 sessions attended"
+        "May 2026 attendance summary\n" "2 sessions\n" "- Al ... 1/2\n" "- Bob... 1/2"
     )
 
 
@@ -533,6 +382,49 @@ def test_write_social_media_summary_text_logs_skip_in_dry_run(tmp_path):
         ("dry run: skipping socialMediaSummary.txt write: %s", summaryPath),
         {},
     ) in exporter.logger.messages
+
+
+def test_run_builds_output_from_all_database_records_not_only_scanned_group(
+    tmp_path, monkeypatch
+):
+    config = _make_config(
+        groupName="Selected Group",
+        groupNames=("Selected Group",),
+        outputDir=tmp_path,
+    )
+    exporter = AttendanceExporter(config)
+    scannedRecord = _record(voterName="Recently Scanned")
+    databaseRecords = [
+        _record(voterName="Recently Scanned"),
+        _record(voterName="Previously Stored"),
+    ]
+    writtenRecords = {}
+
+    monkeypatch.setattr(
+        exporter.pollScraper, "collectPollAttendance", lambda: [scannedRecord]
+    )
+    monkeypatch.setattr(
+        exporter.attendanceStore,
+        "attendanceRecords",
+        lambda _startDate, _endDate: databaseRecords,
+    )
+    monkeypatch.setattr(exporter, "writeSummaryRows", lambda _rows: None)
+    monkeypatch.setattr(exporter, "writeReportRows", lambda _rows: None)
+    monkeypatch.setattr(exporter, "writeSocialMediaSummaryText", lambda _rows: None)
+    monkeypatch.setattr(
+        exporter,
+        "writePreviewJson",
+        lambda rawRows, _summaryRows, _reportRows: writtenRecords.update(
+            {"rawRows": rawRows}
+        ),
+    )
+
+    exporter.run()
+
+    assert [row["voterName"] for row in writtenRecords["rawRows"]] == [
+        "Recently Scanned",
+        "Previously Stored",
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -844,7 +736,6 @@ def test_should_stop_for_strict_lookback_with_all_polls_before_cutoff():
         config=config,
         selectors=DEFAULT_SELECTORS,
         parser=parser,
-        cacheStore=PollCacheStore(config=config, parser=parser),
     )
     scraper.discovery = StubDiscoveryWithVisiblePollDates(
         {
@@ -870,7 +761,6 @@ def test_should_not_stop_for_strict_lookback_when_oldest_visible_poll_is_at_cuto
         config=config,
         selectors=DEFAULT_SELECTORS,
         parser=parser,
-        cacheStore=PollCacheStore(config=config, parser=parser),
     )
     scraper.discovery = StubDiscoveryWithVisiblePollDates(
         {
@@ -896,7 +786,6 @@ def test_should_stop_for_strict_lookback_when_older_poll_is_visible_with_newer_l
         config=config,
         selectors=DEFAULT_SELECTORS,
         parser=parser,
-        cacheStore=PollCacheStore(config=config, parser=parser),
     )
     scraper.discovery = StubDiscoveryWithVisiblePollDates(
         {
@@ -922,7 +811,6 @@ def test_should_not_stop_for_strict_lookback_when_only_dom_fallback_dates_exist(
         config=config,
         selectors=DEFAULT_SELECTORS,
         parser=parser,
-        cacheStore=PollCacheStore(config=config, parser=parser),
     )
     scraper.discovery = StubDiscoveryWithOnlyDomFallbackDates(
         {
@@ -948,7 +836,6 @@ def test_scrape_poll_locator_marks_stop_when_session_date_is_before_month_window
         config=config,
         selectors=DEFAULT_SELECTORS,
         parser=parser,
-        cacheStore=PollCacheStore(config=config, parser=parser),
     )
     scraper.discovery = StubDiscoveryWithSourceTextAndDates(
         source_text_by_locator={
@@ -983,7 +870,6 @@ def test_scrape_poll_locator_does_not_mark_stop_for_session_inside_month_window(
         config=config,
         selectors=DEFAULT_SELECTORS,
         parser=parser,
-        cacheStore=PollCacheStore(config=config, parser=parser),
     )
     scraper.discovery = StubDiscoveryWithSourceTextAndDates(
         source_text_by_locator={
@@ -1011,7 +897,6 @@ def test_log_visible_poll_candidates_logs_each_new_poll_once():
         config=_make_config(),
         selectors=DEFAULT_SELECTORS,
         parser=parser,
-        cacheStore=PollCacheStore(config=_make_config(), parser=parser),
     )
     scraper.discovery = StubDiscoveryWithSourceTexts(
         {
@@ -1032,7 +917,6 @@ def test_log_visible_poll_candidates_skips_polls_seen_in_previous_passes():
         config=_make_config(),
         selectors=DEFAULT_SELECTORS,
         parser=parser,
-        cacheStore=PollCacheStore(config=_make_config(), parser=parser),
     )
     sourceTexts = {
         "poll-a": "Posted 28/04/2026\nMonday 7pm LLC\nSelect one or more\nView votes",
@@ -1072,7 +956,6 @@ def test_build_scraped_poll_key_uses_normalized_title_and_date():
         config=_make_config(strictMonth=True),
         selectors=DEFAULT_SELECTORS,
         parser=parser,
-        cacheStore=PollCacheStore(config=_make_config(strictMonth=True), parser=parser),
     )
     poll_record = PollRecord(
         pollTitle="Tuesday 10.30am LLC",
@@ -1095,13 +978,12 @@ def test_build_scraped_poll_key_uses_normalized_title_and_date():
     assert poll_key == "20260505|tuesday 10.30am llc"
 
 
-def test_build_poll_key_for_locator_uses_dom_header_date_for_cache_lookup():
+def test_build_poll_key_for_locator_uses_dom_header_date():
     parser = PollTextParser(_make_config(strictMonth=True), DEFAULT_SELECTORS)
     scraper = WhatsAppPollScraper(
         config=_make_config(strictMonth=True),
         selectors=DEFAULT_SELECTORS,
         parser=parser,
-        cacheStore=PollCacheStore(config=_make_config(strictMonth=True), parser=parser),
     )
 
     poll_key, poll_title, poll_date_text = scraper.buildPollKeyForLocator(
@@ -1135,7 +1017,6 @@ def test_group_poll_key_includes_group_name():
         config=config,
         selectors=DEFAULT_SELECTORS,
         parser=parser,
-        cacheStore=PollCacheStore(config=config, parser=parser),
     )
 
     assert scraper.buildGroupPollKey("Group One", "poll-1") == "group one|poll-1"

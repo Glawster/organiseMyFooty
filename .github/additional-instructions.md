@@ -34,8 +34,8 @@ Do not add new application behavior to only one entry point.
   directory.
 - SQLite databases, WAL/SHM files, browser profiles, generated reports and real
   attendance data must not be committed.
-- Legacy JSON poll caches are migration inputs only. Imports must remain
-  idempotent and must never modify the source JSON file.
+- The retired JSON poll-cache layer and raw `polls-YYYY-MM.csv` export must not
+  be reintroduced; SQLite is the only durable attendance store.
 - Browser profile data belongs in the configured user-data directory outside
   version control.
 

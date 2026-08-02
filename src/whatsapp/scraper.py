@@ -5,7 +5,6 @@ from datetime import date, datetime, timedelta
 
 from attendanceConfig import RuntimeConfig
 from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
-from whatsapp.cache import PollCacheStore
 from whatsapp.models import PollRecord
 from whatsapp.navigation import GroupNotFoundError, WhatsAppNavigation
 from whatsapp.parsing import PollTextParser
@@ -25,13 +24,11 @@ class WhatsAppPollScraper:
         config: RuntimeConfig,
         selectors: WhatsAppSelectors,
         parser: PollTextParser,
-        cacheStore: PollCacheStore,
         attendanceStore: AttendanceStore | None = None,
     ):
         self.config = config
         self.selectors = selectors
         self.parser = parser
-        self.cacheStore = cacheStore
         self.attendanceStore = attendanceStore
         self.logger = logger
 
@@ -254,7 +251,12 @@ class WhatsAppPollScraper:
             return self.attendanceStore.attendanceRecords(
                 self.config.monthWindow.startDate, self.config.monthWindow.endDate
             )
-        return self.cacheStore.flattenCachedPolls(recordsByPollKey)
+        records = [
+            record
+            for pollRecords in recordsByPollKey.values()
+            for record in pollRecords
+        ]
+        return deduplicateRecords(records)
 
     ## scrape orchestration
 
@@ -289,18 +291,7 @@ class WhatsAppPollScraper:
             rawDateText=rawDateText,
         )
         pollKey = self.buildGroupPollKey(groupName, basePollKey)
-        shouldRecheck = self.cacheStore.shouldRecheckPoll(index, totalPolls)
-        cachedRecords = recordsByPollKey.get(pollKey)
-
-        if cachedRecords and not shouldRecheck:
-            self.logger.info(
-                "using cached poll %s/%s: %s", index, totalPolls, pollTitle
-            )
-            return 1
-
         self.logPollAction(
-            cachedRecords=bool(cachedRecords),
-            shouldRecheck=shouldRecheck,
             index=index,
             totalPolls=totalPolls,
             pollTitle=pollTitle,
@@ -477,20 +468,9 @@ class WhatsAppPollScraper:
 
     def logPollAction(
         self,
-        cachedRecords: bool,
-        shouldRecheck: bool,
         index: int,
         totalPolls: int,
         pollTitle: str,
     ) -> None:
-        if cachedRecords and shouldRecheck:
-            self.logger.info(
-                "rechecking recent poll %s/%s: %s",
-                index,
-                totalPolls,
-                pollTitle,
-            )
-            return
-
         self.logger.debug("-" * 60)
         self.logger.doing(f"processing poll {index}/{totalPolls}: {pollTitle}")

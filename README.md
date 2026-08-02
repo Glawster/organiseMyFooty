@@ -99,7 +99,10 @@ For a safe first run (inspect without writing files — default behaviour):
 python main.py --group "My Footy Group" --month 2026-03
 ```
 
-To combine polls from multiple groups, repeat `--group`:
+Groups used in successful runs accumulate in
+`~/.config/organiseMyFooty/state.json`. Run without `--group` to scan every
+configured group, or provide `--group` to scan only the named group for that
+run. Repeat `--group` to scan a selected set:
 
 ```bash
 python main.py \
@@ -118,7 +121,7 @@ python main.py --group "My Footy Group" --month 2026-03 --confirm
 
 | Option | Description |
 |---|---|
-| `--group` | Exact WhatsApp group name; repeat to scrape multiple groups (required) |
+| `--group` | Exact WhatsApp group name; repeat to select multiple groups; omit to scan all configured groups |
 | `--month` | Target month in `YYYY-MM` format (default: previous month) |
 | `--output` | Output directory for CSV files |
 | `--user-data-dir` | Persistent browser profile directory |
@@ -132,7 +135,6 @@ python main.py --group "My Footy Group" --month 2026-03 --confirm
 | `--override` | Continue past captured polls to the start of the month two calendar months ago |
 | `--scan-since YYYY-MM-DD` | Replace the override horizon with an inclusive local date; requires `--override` |
 | `--view` | Inspect stored attendance for the selected month without browser scanning |
-| `--import-cache PATH` | Import a legacy poll-cache JSON file; requires `--confirm` to write |
 
 Polls are always filtered to sessions whose derived session date falls inside the selected month window.
 The SQLite attendance store is loaded automatically; no cache opt-in is required.
@@ -141,7 +143,6 @@ The SQLite attendance store is loaded automatically; no cache opt-in is required
 
 | File | Description |
 |---|---|
-| `polls.csv` | Raw poll rows: `pollTitle`, `pollDateText`, `option`, `voterName`, `sourceHint` |
 | `attendanceSummary.csv` | Aggregated summary: `name`, `yesCount`, `noCount`, `totalVotes`, `pollsResponded` |
 | `attendanceReport.csv` | Session-by-session matrix used for month attendance reporting |
 | `socialMediaSummary.txt` | Paste-ready monthly attendance summary generated from `attendanceReport.csv` |

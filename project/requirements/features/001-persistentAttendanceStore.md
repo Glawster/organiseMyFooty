@@ -196,17 +196,10 @@ exact table and column names may be refined during design:
 - `attendance_observations` — source-specific evidence;
 - `scans` — source scan scope, timing and completion state.
 
-## Migration
+## Cache retirement
 
-1. Existing valid JSON poll-cache records must be importable into the initial
-   SQLite schema.
-2. Import must be idempotent and must not duplicate sessions, members or
-   attendance when repeated.
-3. Invalid cache rows must be reported and skipped without aborting all valid
-   imports.
-4. The JSON cache must remain untouched until a successful import has committed.
-5. The legacy `--cache` behaviour must be removed or replaced with options that
-   accurately describe store inspection, migration and recovery behaviour.
+The superseded JSON poll-cache layer, its migration command, and the raw poll
+CSV export are removed. SQLite is the only durable attendance store.
 
 ## Acceptance criteria
 
@@ -225,16 +218,15 @@ exact table and column names may be refined during design:
 8. Reports are produced from stored session and attendance data.
 9. An interrupted write or failed transaction leaves the last committed
    database state usable.
-10. Existing JSON cache data can be migrated safely and idempotently.
-11. A normal newest-to-oldest scan stops when it reaches a reliably matched,
+10. A normal newest-to-oldest scan stops when it reaches a reliably matched,
     previously captured poll and logs that boundary.
-12. With the override flag set, the same scan continues past previously
+11. With the override flag set, the same scan continues past previously
     captured polls and processes history back to, but not before, the start of
     the month two calendar months before the current month.
-13. With `--override --scan-since 2026-02-15`, scanning continues past captured
+12. With `--override --scan-since 2026-02-15`, scanning continues past captured
     polls and includes records dated 15 February 2026 or later, regardless of
     the normal two-month horizon.
-14. Supplying `--scan-since 2026-02-15` without `--override` is rejected before
+13. Supplying `--scan-since 2026-02-15` without `--override` is rejected before
     browser scanning begins.
 
 ## Test coverage

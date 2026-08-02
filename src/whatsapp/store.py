@@ -7,7 +7,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-import json
 import re
 import sqlite3
 
@@ -651,52 +650,6 @@ class AttendanceStore:
             "SELECT * FROM sessions WHERE session_date BETWEEN ? AND ? ORDER BY session_date, start_time",
             (startDate.isoformat(), endDate.isoformat()),
         ).fetchall()
-
-    ## legacy migration
-
-    def legacyCacheImport(self, cachePath: Path, parser) -> tuple[int, int]:
-        """Import valid legacy cache polls idempotently without modifying the JSON file."""
-        payload = json.loads(cachePath.read_text(encoding="utf-8"))
-        polls = payload.get("polls")
-        if not isinstance(polls, dict):
-            raise ValueError("legacy cache has no polls object")
-        sourceNames = payload.get("groupNames") or [
-            payload.get("groupName") or "legacy"
-        ]
-        sourceName = str(sourceNames[0])
-        imported = skipped = 0
-        for pollKey, rawRows in polls.items():
-            records: list[PollRecord] = []
-            if not isinstance(rawRows, list):
-                skipped += 1
-                continue
-            for row in rawRows:
-                try:
-                    record = PollRecord(
-                        pollTitle=str(row["pollTitle"]),
-                        pollDateText=str(row["pollDateText"]),
-                        sessionDateText=str(
-                            row.get("sessionDateText")
-                            or parser.calculateSessionDateText(
-                                str(row["pollTitle"]), str(row["pollDateText"])
-                            )
-                        ),
-                        option=str(row["option"]),
-                        voterName=str(row["voterName"]),
-                        sourceHint=str(row.get("sourceHint", "")),
-                    )
-                    if not record.sessionDateText or not record.voterName.strip():
-                        raise ValueError("missing session date or member")
-                    records.append(record)
-                except (KeyError, TypeError, ValueError) as exc:
-                    skipped += 1
-                    self.logger.warning("invalid legacy cache row skipped: %s", exc)
-            if records:
-                self.pollReconcile(
-                    sourceName, f"legacy:{pollKey}", records, complete=True
-                )
-                imported += 1
-        return imported, skipped
 
     ## parsing helpers
 

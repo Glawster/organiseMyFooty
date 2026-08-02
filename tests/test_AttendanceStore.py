@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date
-import json
 import sqlite3
 
 import pytest
@@ -11,7 +10,6 @@ from whatsapp.models import PollRecord
 from whatsapp.parsing import PollTextParser
 from whatsapp.selectors import DEFAULT_SELECTORS
 from whatsapp.store import AttendanceStore, SCHEMA_VERSION
-from whatsapp.cache import PollCacheStore
 from whatsapp.scraper import WhatsAppPollScraper
 
 
@@ -176,7 +174,6 @@ def test_captured_boundary_is_independent_per_group_and_override_disables_it(
         config,
         DEFAULT_SELECTORS,
         parser,
-        PollCacheStore(config, parser),
         store,
     )
     store.pollReconcile("Group A", "stable-id", [record()])
@@ -191,7 +188,6 @@ def test_captured_boundary_is_independent_per_group_and_override_disables_it(
         overrideConfig,
         DEFAULT_SELECTORS,
         overrideParser,
-        PollCacheStore(overrideConfig, overrideParser),
         store,
     )
     assert not overrideScraper.capturedPollIsBoundary("Group A", "stable-id")
@@ -207,35 +203,3 @@ def test_scan_cutoff_standard_custom_and_year_boundary():
         resolveScanCutoff(False, date(2026, 2, 15), date(2026, 8, 1))
     with pytest.raises(ValueError, match="future"):
         resolveScanCutoff(True, date(2026, 8, 2), date(2026, 8, 1))
-
-
-def test_legacy_import_is_idempotent_and_preserves_file(store, tmp_path):
-    config = RuntimeConfig(
-        "Group A",
-        MonthWindow("2026-05", date(2026, 5, 1), date(2026, 5, 31)),
-        tmp_path,
-        tmp_path,
-        True,
-        False,
-        1,
-        20,
-        None,
-        None,
-        False,
-        False,
-        None,
-    )
-    parser = PollTextParser(config, DEFAULT_SELECTORS)
-    path = tmp_path / "pollCache-2026-05.json"
-    payload = {
-        "groupName": "Group A",
-        "polls": {"one": [record().__dict__, {"bad": "row"}]},
-    }
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    original = path.read_bytes()
-    assert store.legacyCacheImport(path, parser) == (1, 1)
-    assert store.legacyCacheImport(path, parser) == (1, 1)
-    assert (
-        store.connection.execute("SELECT COUNT(*) FROM attendance").fetchone()[0] == 1
-    )
-    assert path.read_bytes() == original
