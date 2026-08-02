@@ -2,6 +2,8 @@
 
 Python tool for exporting WhatsApp poll attendance from WhatsApp Web.
 
+The supported runtime is Python 3.12.
+
 Automates collection of footy training/match poll responses from a WhatsApp group,
 exporting voter names and attendance counts to CSV files.
 
@@ -9,18 +11,32 @@ exporting voter names and attendance counts to CSV files.
 
 - [Project records](project/README.md)
 - [Copilot instructions](.github/copilot-instructions.md)
-- [Project-specific instructions](.github/additional-copilot-instructions.md)
+- [Project-specific instructions](.github/additional-instructions.md)
 - [Repository layout](.github/repositoryLayout.md)
+- [Requirements management](.github/requirementsManagement.md)
+- [Persistent attendance store](documentation/persistentAttendanceStore/README.md)
 
 ## Source files
 
-- `src/exportAttendance.py` — CLI entry point
-- `src/whatsappAttendance.py` — browser automation and export pipeline
+- `main.py` — standalone compatibility entry point
+- `src/organiseMyFooty/cli.py` — installed CLI entry point
+- `src/whatsapp/exporter.py` — collection and report orchestration
+- `src/whatsapp/scraper.py` — WhatsApp browser collection workflow
+- `src/whatsapp/store.py` — SQLite schema, reconciliation and queries
 - `src/attendanceConfig.py` — config helpers and month/date resolution
-- `src/whatsappSelectors.py` — centralised WhatsApp Web CSS/aria selectors
-- `src/__init__.py` — package initialisation
+- `src/whatsapp/selectors.py` — centralised WhatsApp Web selectors
 
 ## Install
+
+Conda is the preferred environment manager:
+
+```bash
+conda env create -f environment.yml
+conda activate organise-my-footy
+playwright install chromium
+```
+
+Alternatively, use a virtual environment:
 
 ```bash
 python -m venv .venv
@@ -113,8 +129,13 @@ python main.py --group "My Footy Group" --month 2026-03 --confirm
 | `--poll-title-filter` | Only process polls whose text contains this substring |
 | `--headless` | Run browser without showing a window |
 | `--confirm` | Write CSV exports; omit to run in safe dry-run mode (default) |
+| `--override` | Continue past captured polls to the start of the month two calendar months ago |
+| `--scan-since YYYY-MM-DD` | Replace the override horizon with an inclusive local date; requires `--override` |
+| `--view` | Inspect stored attendance for the selected month without browser scanning |
+| `--import-cache PATH` | Import a legacy poll-cache JSON file; requires `--confirm` to write |
 
 Polls are always filtered to sessions whose derived session date falls inside the selected month window.
+The SQLite attendance store is loaded automatically; no cache opt-in is required.
 
 ## Output files
 

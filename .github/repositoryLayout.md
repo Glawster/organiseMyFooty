@@ -1,4 +1,4 @@
-<!-- synced from Glawster/organiseMyProjects -- do not edit directly -->
+<!-- deployed from Glawster/organiseMyProjects release 0.3 -- do not edit directly -->
 # Repository layout
 
 This managed guide explains what belongs in each top-level directory and where
@@ -123,74 +123,6 @@ normally be ignored unless an export is deliberately approved for publication.
 When a repository uses requirements or ADR workflows, their detailed naming
 rules should live in `project/requirements/README.md` and
 `project/adr/README.md` respectively.
-
-## Requirement conventions
-
-Keep every requirement permanently under `project/requirements/features/`.
-Do not move completed or retired records: treat the allocated path as a stable
-interface for documentation, prompts, commits and external references. Record
-lifecycle changes in the requirement's status and requirements index instead.
-
-Keep durable prompts under `project/requirements/prompt/`, grouped in a folder
-whose name matches the requirement filename without `.md`. Shared agent
-adapters belong in `project/requirements/prompt/adapters/`. Prompt records stay
-at stable paths after completion so later work can reconstruct how an agent was
-briefed.
-
-The requirements index uses these workflow sections:
-
-- `ToDo`
-- `InProgress`
-- `Completed`
-
-Requirement filenames use a permanent sequential identifier:
-
-```text
-ddd-name.md
-```
-
-- `ddd` is a zero-padded sequential number that is never changed or reused.
-- `name` is a concise camelCase description.
-
-Each project's `project/requirements/README.md` records its next available
-number, status index and any project-specific requirement details. The
-identifier must also appear inside the requirement record.
-
-Living documentation owned by one requirement belongs in a directory named
-after the requirement without its number or `.md` extension:
-
-```text
-project/requirements/features/003-viewManagement.md
-The requirements index uses these workflow sections:
-
-- `ToDo`
-- `In Progress`
-- `Completed`
-
-Requirement filenames use a permanent project identifier:
-
-```text
-<PREFIX>-ddd-name.md
-```
-
-- `<PREFIX>` is the owning project's stable uppercase identifier.
-- `ddd` is a zero-padded sequential number that is never changed or reused.
-- `name` is a concise camelCase description.
-
-Each project's `project/requirements/README.md` records its prefix, next
-available number, status index and any project-specific requirement details.
-The identifier must also appear inside the requirement record.
-
-Living documentation owned by one requirement belongs in a directory named
-after the requirement without its prefix, number or `.md` extension:
-
-```text
-project/requirements/features/FMP-003-viewManagement.md
-documentation/viewManagement/
-```
-
-General documentation spanning multiple requirements remains directly under
-the owning project's `documentation/` directory.
 
 ## Documentation conventions
 

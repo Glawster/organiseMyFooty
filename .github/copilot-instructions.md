@@ -1,4 +1,4 @@
-<!-- synced from Glawster/organiseMyProjects -- do not edit directly -->
+<!-- deployed from Glawster/organiseMyProjects release 0.3 -- do not edit directly -->
 # Agent Instructions -- Master Development Guidelines (v2)
 
 # Table of Contents
@@ -247,7 +247,7 @@ Examples:
     --verbose
     --quiet
     --json
-    
+
 ## Universal Options
 
 --help
@@ -310,6 +310,14 @@ All CLI applications should:
 -   Do not auto-install dependencies at runtime\
 -   Fail fast if external tools are missing\
 -   Validate system requirements explicitly
+
+## Python Environment Standard
+
+- Use Conda as the preferred Python environment manager.
+- Every Python application should provide an `environment.yml`.
+- Declare package dependencies in `pyproject.toml`.
+- Use the Conda environment to install the project in editable mode.
+- Document Conda installation before `venv` alternatives.
 
 # Patterns
 

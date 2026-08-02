@@ -14,6 +14,7 @@ from whatsapp.pollDiscovery import PollDiscovery
 from whatsapp.pollRecordsBuilder import PollRecordsBuilder
 from whatsapp.records import deduplicateRecords
 from whatsapp.selectors import WhatsAppSelectors
+from whatsapp.store import AttendanceStore, normaliseName
 
 logger = getLogger()
 
@@ -25,11 +26,13 @@ class WhatsAppPollScraper:
         selectors: WhatsAppSelectors,
         parser: PollTextParser,
         cacheStore: PollCacheStore,
+        attendanceStore: AttendanceStore | None = None,
     ):
         self.config = config
         self.selectors = selectors
         self.parser = parser
         self.cacheStore = cacheStore
+        self.attendanceStore = attendanceStore
         self.logger = logger
 
         self.navigation = WhatsAppNavigation(config=config, selectors=selectors)
@@ -71,10 +74,12 @@ class WhatsAppPollScraper:
         return visibleDates
 
     def getStrictLookbackStartDate(self) -> date:
+        if self.config.override and self.config.scanSince:
+            return self.config.scanSince
         return self.config.monthWindow.startDate - timedelta(days=7)
 
     def shouldStopForStrictLookback(self, pollLocators: list) -> bool:
-        if not self.config.strictMonth:
+        if not self.config.strictMonth and not self.config.override:
             return False
 
         visibleDates = self.extractVisiblePollDates(pollLocators)
@@ -87,19 +92,37 @@ class WhatsAppPollScraper:
         if oldestVisibleDate >= lookbackStartDate:
             return False
 
-        self.logger.info(
-            "reached before strict lookback window: oldest visible poll date %s, cutoff %s",
-            oldestVisibleDate,
-            lookbackStartDate,
-        )
+        if self.config.override:
+            self.logger.info(
+                "reached override horizon: oldest poll date %s, cutoff %s",
+                oldestVisibleDate,
+                lookbackStartDate,
+            )
+        else:
+            self.logger.info(
+                "reached before strict lookback window: oldest visible poll date %s, cutoff %s",
+                oldestVisibleDate,
+                lookbackStartDate,
+            )
         return True
 
     ## public api
 
+    def capturedPollIsBoundary(self, groupName: str, stableMessageKey: str) -> bool:
+        """Return whether a reliable source identity ends this group's normal scan."""
+        return bool(
+            self.attendanceStore
+            and stableMessageKey
+            and not self.config.override
+            and self.attendanceStore.sourcePollCaptured(
+                "whatsapp", normaliseName(groupName), stableMessageKey
+            )
+        )
+
     def collectPollAttendance(self) -> list[PollRecord]:
         from playwright.sync_api import sync_playwright
 
-        recordsByPollKey = self.cacheStore.loadPollCache()
+        recordsByPollKey: OrderedDict[str, list[PollRecord]] = OrderedDict()
         pollCount = 0
         self.stopAfterCurrentPass = False
 
@@ -119,11 +142,25 @@ class WhatsAppPollScraper:
                     self.logger.info("collecting polls from group: %s", groupName)
                     seenPollKeys: set[str] = set()
                     self.stopAfterCurrentPass = False
+                    scanId = None
+                    if self.attendanceStore:
+                        sourceId = self.attendanceStore.sourceEnsure(
+                            "whatsapp", normaliseName(groupName), groupName
+                        )
+                        self.attendanceStore.connection.commit()
+                        scanId = self.attendanceStore.scanStart(
+                            sourceId, self.config.scanSince, date.today()
+                        )
+                    boundaryReason = "history_exhausted"
 
                     try:
                         self.navigation.openGroup(page, groupName)
                     except GroupNotFoundError as exc:
                         self.logger.warning("%s; skipping group", exc)
+                        if self.attendanceStore and scanId is not None:
+                            self.attendanceStore.scanFinish(
+                                scanId, "failed", "group_not_found", str(exc)
+                            )
                         continue
                     self.navigation.scrollChatToLatest(page)
 
@@ -141,12 +178,25 @@ class WhatsAppPollScraper:
                         for locator in pollLocators:
                             sourceText = self.discovery.extractPollSourceText(locator)
                             messageKey = self.discovery.extractMessageKey(locator)
+                            stableMessageKey = self.discovery.extractStableMessageKey(
+                                locator
+                            )
                             key = self.discovery.buildPollLocatorKey(
                                 messageKey, sourceText
                             )
 
                             if key in seenPollKeys:
                                 continue
+
+                            if self.capturedPollIsBoundary(groupName, stableMessageKey):
+                                self.logger.info(
+                                    "captured poll boundary: %s in %s",
+                                    stableMessageKey,
+                                    groupName,
+                                )
+                                boundaryReason = "captured_poll"
+                                self.stopAfterCurrentPass = True
+                                break
 
                             seenPollKeys.add(key)
 
@@ -160,6 +210,7 @@ class WhatsAppPollScraper:
                                 totalPolls=len(seenPollKeys),
                                 recordsByPollKey=recordsByPollKey,
                                 groupName=groupName,
+                                pollExternalId=stableMessageKey,
                             )
 
                         if self.hasReachedPollLimit(pollCount):
@@ -169,6 +220,7 @@ class WhatsAppPollScraper:
                             break
 
                         if self.shouldStopForStrictLookback(pollLocators):
+                            boundaryReason = "date_window"
                             break
 
                         self.navigation.scrollChatHistory(page, scrollPasses=1)
@@ -185,11 +237,23 @@ class WhatsAppPollScraper:
                         groupName,
                         pollCount,
                     )
+                    if self.attendanceStore and scanId is not None:
+                        scanStatus = "completed"
+                        if self.hasReachedPollLimit(pollCount):
+                            scanStatus, boundaryReason = "partial", "scan_limit"
+                        elif self.config.pollTitleFilter:
+                            scanStatus, boundaryReason = "partial", "title_filter"
+                        self.attendanceStore.scanFinish(
+                            scanId, scanStatus, boundaryReason
+                        )
 
             finally:
                 browserContext.close()
 
-        self.cacheStore.savePollCache(recordsByPollKey)
+        if self.attendanceStore:
+            return self.attendanceStore.attendanceRecords(
+                self.config.monthWindow.startDate, self.config.monthWindow.endDate
+            )
         return self.cacheStore.flattenCachedPolls(recordsByPollKey)
 
     ## scrape orchestration
@@ -202,6 +266,7 @@ class WhatsAppPollScraper:
         totalPolls: int,
         recordsByPollKey: OrderedDict[str, list[PollRecord]],
         groupName: str | None = None,
+        pollExternalId: str = "",
     ) -> int:
         groupName = groupName or self.config.groupName
         sourceText = self.discovery.extractPollSourceText(locator)
@@ -280,6 +345,13 @@ class WhatsAppPollScraper:
             )
             pollKey = self.buildGroupPollKey(groupName, basePollKey)
             recordsByPollKey[pollKey] = deduplicateRecords(pollRecords)
+            if self.attendanceStore and not self.config.dryRun:
+                self.attendanceStore.pollReconcile(
+                    groupName,
+                    pollExternalId or f"derived:{pollKey}",
+                    pollRecords,
+                    complete=True,
+                )
             return 1
         except Exception as exc:
             self.logger.warning("Unable to scrape poll votes: %s", exc)
@@ -314,7 +386,7 @@ class WhatsAppPollScraper:
     def shouldStopForPastMonthWindow(
         self, locator, sourceText: str, rawDateText: str = ""
     ) -> bool:
-        if not self.config.strictMonth:
+        if not self.config.strictMonth and not self.config.override:
             return False
 
         pollTitle = self.parser.extractPollTitle(sourceText=sourceText)
@@ -335,11 +407,16 @@ class WhatsAppPollScraper:
         if sessionDate is None:
             return False
 
-        if sessionDate >= self.config.monthWindow.startDate:
+        cutoff = (
+            self.config.scanSince
+            if self.config.override and self.config.scanSince
+            else self.config.monthWindow.startDate
+        )
+        if sessionDate >= cutoff:
             return False
 
         self.logger.info(
-            "reached before month window via session date: %s (%s)",
+            "reached scan cutoff via session date: %s (%s)",
             pollTitle,
             sessionDateText,
         )

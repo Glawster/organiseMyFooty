@@ -1,3 +1,4 @@
+# deployed from Glawster/organiseMyProjects release 0.3 -- do not edit directly
 """
 guiNamingLinter.py - GUI Code Quality Linter
 

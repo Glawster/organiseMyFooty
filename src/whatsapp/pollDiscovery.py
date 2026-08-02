@@ -291,6 +291,16 @@ class PollDiscovery:
 
         return ""
 
+    def extractStableMessageKey(self, locator) -> str:
+        """Return WhatsApp's message data-id, excluding generic DOM test ids."""
+        try:
+            value = locator.locator(
+                "xpath=ancestor-or-self::*[@data-id][1]"
+            ).first.get_attribute("data-id", timeout=1000)
+            return str(value or "")
+        except Exception:
+            return ""
+
     def buildPollLocatorKey(self, messageKey: str, sourceText: str) -> str:
         sourceKey = "|".join(sourceText.split())[:MAX_SOURCE_KEY_LENGTH]
         if messageKey:

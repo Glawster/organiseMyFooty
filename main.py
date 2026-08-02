@@ -32,6 +32,7 @@ from attendanceConfig import (  # noqa: E402
     defaultUserDataDir,
     ensureOutputDir,
     resolveMonthWindow,
+    resolveScanCutoff,
 )
 from whatsappAttendance import AttendanceExporter  # noqa: E402
 
@@ -69,6 +70,9 @@ def serialiseRuntimeConfig(runtime: RuntimeConfig) -> dict:
         "strictMonth": runtime.strictMonth,
         "myName": runtime.myName,
         "effectiveGroupNames": list(runtime.effectiveGroupNames),
+        "override": runtime.override,
+        "scanSince": runtime.scanSince.isoformat() if runtime.scanSince else None,
+        "storePath": str(runtime.attendanceStorePath),
     }
 
 
@@ -219,16 +223,27 @@ def buildParser(state: dict) -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--cache",
+        "--override",
         action="store_true",
-        help="use cached poll results when available (default is to rescrape polls)",
+        help="continue past captured polls to the standard two-month horizon",
+    )
+    parser.add_argument(
+        "--scan-since",
+        metavar="YYYY-MM-DD",
+        help="inclusive history cutoff; requires --override",
     )
 
     parser.add_argument(
         "--view",
         dest="viewCache",
         action="store_true",
-        help="view cached poll records instead of running an export",
+        help="inspect stored attendance for the selected month instead of scanning",
+    )
+    parser.add_argument(
+        "--import-cache",
+        type=Path,
+        metavar="PATH",
+        help="import a legacy JSON poll cache into the attendance store (requires --confirm)",
     )
 
     parser.add_argument(
@@ -276,11 +291,22 @@ def buildConfig(args: argparse.Namespace, dryRun: bool, logLevel: int) -> Config
         includeNoVotes=False,
         resume=False,
         pollTitleFilter=None,
-        usePollCache=args.cache,
+        usePollCache=False,
         groupNames=groupNames,
+        override=args.override,
+        scanSince=resolveScanCutoff(args.override, parseScanSince(args.scan_since)),
     )
 
     return Config(runtime=runtime)
+
+
+def parseScanSince(value: str | None):
+    if value is None:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError("invalid --scan-since date; expected YYYY-MM-DD") from exc
 
 
 # -------------------------------------------------------------------
@@ -298,13 +324,17 @@ def run(config: Config) -> None:
 
 def viewCache(config: Config) -> None:
     exporter = AttendanceExporter(config.runtime)
-    recordsByPollKey = exporter.cacheStore.loadPollCache(force=True)
-
     payload = {
         "groupNames": list(config.runtime.effectiveGroupNames),
         "month": config.runtime.monthWindow.monthKey,
-        "cachePath": str(exporter.cacheStore.getPollCachePath()),
-        "polls": serialiseCachedPolls(recordsByPollKey),
+        "storePath": str(config.runtime.attendanceStorePath),
+        "attendance": [
+            record.__dict__
+            for record in exporter.attendanceStore.attendanceRecords(
+                config.runtime.monthWindow.startDate,
+                config.runtime.monthWindow.endDate,
+            )
+        ],
     }
 
     print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -319,7 +349,14 @@ def main() -> None:
     args = parser.parse_args()
     args.groupNames = normaliseGroupNames(args.groupNames) or args.savedGroupNames
 
-    if not args.groupNames and not (args.showConfig or args.viewCache):
+    try:
+        resolveScanCutoff(args.override, parseScanSince(args.scan_since))
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    if not args.groupNames and not (
+        args.showConfig or args.viewCache or args.import_cache
+    ):
         parser.error("--group is required.")
 
     dryRun = not args.confirm
@@ -342,6 +379,23 @@ def main() -> None:
 
     if args.viewCache:
         viewCache(config)
+        return
+
+    if args.import_cache:
+        if not args.import_cache.is_file():
+            parser.error(f"legacy cache does not exist: {args.import_cache}")
+        if dryRun:
+            appLogger.action("import legacy cache: %s", args.import_cache)
+            return
+        exporter = AttendanceExporter(config.runtime)
+        imported, skipped = exporter.attendanceStore.legacyCacheImport(
+            args.import_cache, exporter.parser
+        )
+        appLogger.info(
+            "legacy cache import complete: %s poll(s), %s invalid row(s)",
+            imported,
+            skipped,
+        )
         return
 
     run(config)
