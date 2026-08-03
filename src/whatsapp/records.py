@@ -5,7 +5,7 @@ from whatsapp.models import PollRecord
 
 def deduplicateRecords(records: list[PollRecord]) -> list[PollRecord]:
     output: list[PollRecord] = []
-    seen: set[tuple[str, str, str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, str, str]] = set()
     for record in records:
         key = (
             record.pollTitle,
@@ -13,6 +13,7 @@ def deduplicateRecords(records: list[PollRecord]) -> list[PollRecord]:
             record.sessionDateText,
             record.option,
             record.voterName,
+            record.sessionStatus,
         )
         if key in seen:
             continue

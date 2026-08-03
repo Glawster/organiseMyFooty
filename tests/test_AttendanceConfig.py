@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from attendanceConfig import (
-    MonthWindow,
     defaultOutputDir,
     defaultUserDataDir,
     ensureOutputDir,

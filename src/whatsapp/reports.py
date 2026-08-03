@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from datetime import datetime, timedelta
 
-from whatsapp.models import PollRecord, PollSession
+from whatsapp.models import PollRecord, PollSession, SessionStatus
 from whatsapp.parsing import PollTextParser
 
 
@@ -15,6 +15,8 @@ class AttendanceReportBuilder:
     def buildSummaryRows(self, records: list[PollRecord]) -> list[dict]:
         summary: dict[str, dict[str, int | set[str]]] = {}
         for record in records:
+            if record.sessionStatus is SessionStatus.CANCELLED:
+                continue
             row = summary.setdefault(
                 record.voterName,
                 {
@@ -49,6 +51,11 @@ class AttendanceReportBuilder:
 
     # ## report table utilities
     def buildAttendanceReportRows(self, records: list[PollRecord]) -> list[list[str]]:
+        records = [
+            record
+            for record in records
+            if record.sessionStatus is SessionStatus.SCHEDULED
+        ]
         if not records:
             return [["week"], ["date"], ["venue"], ["day"], ["name"]]
 
@@ -170,6 +177,7 @@ class AttendanceReportBuilder:
                 weekNumber=weekNumbersByKey[sessionWeekKey],
                 sessionName=sessionName,
                 venueName=venueName,
+                sessionStatus=record.sessionStatus,
             )
 
         return pollSessions

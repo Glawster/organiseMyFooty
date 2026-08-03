@@ -2,7 +2,7 @@
 
 ## Status
 
-ToDo
+InProgress
 
 ## Summary
 
@@ -68,3 +68,25 @@ The durable status and source-reconciliation behaviour should align with
 
 - Detecting cancellation from free-form chat messages outside a poll title.
 - Automatically notifying members that a session was cancelled.
+
+## Verification
+
+- Automated coverage: `tests/test_CancelledSessions.py`
+- Full regression suite and repository formatting/lint checks are required
+  before completion.
+- Live WhatsApp validation remains pending.
+
+## Traceability
+
+- Implementation: `src/whatsapp/models.py`, `src/whatsapp/parsing.py`,
+  `src/whatsapp/pollRecordsBuilder.py`, `src/whatsapp/store.py`, and
+  `src/whatsapp/reports.py`
+- Tests: `tests/test_CancelledSessions.py`
+- Documentation: `documentation/cancelledSessions/README.md`
+- Pull request: pending
+- Agent runs: 2026-08-03 Codex implementation run on
+  `feature/002-cancelledSessions`
+
+## Change history
+
+- 2026-08-03: delivery started on `feature/002-cancelledSessions`.
