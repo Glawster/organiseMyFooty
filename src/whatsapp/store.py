@@ -12,10 +12,10 @@ import sqlite3
 
 from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
 
-from whatsapp.models import PollRecord
+from whatsapp.models import PollRecord, SessionStatus
 
 logger = getLogger()
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 VALID_RESPONSES = {"yes", "no", "maybe", "unknown"}
 RESPONSE_PRIORITY = {"yes": 4, "maybe": 3, "no": 2, "unknown": 1}
 
@@ -163,6 +163,8 @@ class AttendanceStore:
                         source_title TEXT NOT NULL DEFAULT '',
                         poll_date TEXT,
                         source_hint TEXT NOT NULL DEFAULT '',
+                        session_status TEXT NOT NULL DEFAULT 'scheduled'
+                            CHECK(session_status IN ('scheduled','cancelled')),
                         captured_successfully INTEGER NOT NULL DEFAULT 0,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
@@ -208,9 +210,15 @@ class AttendanceStore:
                     CREATE INDEX idx_attendance_member_session ON attendance(member_id, session_id);
                     CREATE INDEX idx_observations_attendance ON attendance_observations(session_id, member_id, active);
                     CREATE INDEX idx_scans_source_started ON scans(source_id, started_at);
-                    PRAGMA user_version = 1;
+                    PRAGMA user_version = 2;
                     """
                 )
+        elif version == 1:
+            with self.transaction() as connection:
+                connection.execute(
+                    "ALTER TABLE session_sources ADD COLUMN session_status TEXT NOT NULL DEFAULT 'scheduled' CHECK(session_status IN ('scheduled','cancelled'))"
+                )
+                connection.execute("PRAGMA user_version = 2")
 
     ## scans
 
@@ -346,8 +354,11 @@ class AttendanceStore:
             sessionSourceId = self._sessionSourceResolve(
                 sourceId, sessionId, pollExternalId, recordList[0], observedAt
             )
+            self._sessionStatusResolve(sessionId, observedAt)
             seenMembers: set[int] = set()
             for record in recordList:
+                if not record.voterName.strip():
+                    continue
                 memberId = self.memberResolve(record.voterName)
                 seenMembers.add(memberId)
                 self._observationUpsert(
@@ -503,6 +514,33 @@ class AttendanceStore:
         self.logger.info("session created: %s %s", sessionDate, name)
         return int(cursor.lastrowid)
 
+    def _sessionStatusResolve(self, sessionId: int, now: str) -> None:
+        """Resolve status without allowing one source to erase another."""
+        rows = self.connection.execute(
+            "SELECT session_status FROM session_sources WHERE session_id=?",
+            (sessionId,),
+        ).fetchall()
+        resolvedStatus = (
+            SessionStatus.CANCELLED
+            if any(row[0] == SessionStatus.CANCELLED for row in rows)
+            else SessionStatus.SCHEDULED
+        )
+        current = self.connection.execute(
+            "SELECT status FROM sessions WHERE id=?", (sessionId,)
+        ).fetchone()
+        assert current
+        if current[0] == resolvedStatus:
+            return
+        self.connection.execute(
+            "UPDATE sessions SET status=?, updated_at=? WHERE id=?",
+            (resolvedStatus, now, sessionId),
+        )
+        self.summary.sessionsUpdated += 1
+        if resolvedStatus is SessionStatus.CANCELLED:
+            self.logger.value("session cancelled", sessionId)
+        else:
+            self.logger.value("session restored", sessionId)
+
     def _sessionSourceResolve(
         self,
         sourceId: int,
@@ -516,22 +554,23 @@ class AttendanceStore:
             (sourceId, externalId),
         ).fetchone()
         if row:
-            if int(row[1]) != sessionId:
-                self.connection.execute(
-                    "UPDATE session_sources SET session_id=?, source_title=?, poll_date=?, source_hint=?, captured_successfully=1, updated_at=? WHERE id=?",
-                    (
-                        sessionId,
-                        record.pollTitle,
-                        record.pollDateText,
-                        record.sourceHint,
-                        now,
-                        int(row[0]),
-                    ),
-                )
+            self.connection.execute(
+                "UPDATE session_sources SET session_id=?, source_title=?, poll_date=?, source_hint=?, session_status=?, captured_successfully=1, updated_at=? WHERE id=?",
+                (
+                    sessionId,
+                    record.pollTitle,
+                    record.pollDateText,
+                    record.sourceHint,
+                    record.sessionStatus,
+                    now,
+                    int(row[0]),
+                ),
+            )
             return int(row[0])
         cursor = self.connection.execute(
             """INSERT INTO session_sources(source_id, session_id, external_id, source_title, poll_date,
-                   source_hint, captured_successfully, created_at, updated_at) VALUES(?,?,?,?,?,?,1,?,?)""",
+                   source_hint, session_status, captured_successfully, created_at, updated_at)
+                   VALUES(?,?,?,?,?,?,?,1,?,?)""",
             (
                 sourceId,
                 sessionId,
@@ -539,6 +578,7 @@ class AttendanceStore:
                 record.pollTitle,
                 record.pollDateText,
                 record.sourceHint,
+                record.sessionStatus,
                 now,
                 now,
             ),
@@ -555,7 +595,7 @@ class AttendanceStore:
                FROM attendance a JOIN sessions s ON s.id=a.session_id
                JOIN members m ON m.id=a.member_id
                LEFT JOIN session_sources ss ON ss.session_id=s.id
-               WHERE s.session_date BETWEEN ? AND ?
+               WHERE s.session_date BETWEEN ? AND ? AND s.status='scheduled'
                GROUP BY a.id ORDER BY s.session_date, s.start_time, m.normalised_name""",
             (startDate.isoformat(), endDate.isoformat()),
         ).fetchall()
@@ -589,7 +629,7 @@ class AttendanceStore:
         sourceType: str | None = None,
     ) -> list[sqlite3.Row]:
         """Query effective attendance using optional response/source metadata filters."""
-        conditions = ["se.session_date BETWEEN ? AND ?"]
+        conditions = ["se.session_date BETWEEN ? AND ?", "se.status='scheduled'"]
         params: list[object] = [startDate.isoformat(), endDate.isoformat()]
         for column, value in (
             ("a.response", response.casefold() if response else None),
@@ -623,7 +663,7 @@ class AttendanceStore:
             condition = f" AND a.response IN ({','.join('?' for _ in values)})"
             params.extend(values)
         return self.connection.execute(
-            "SELECT m.*, a.response, a.conflicted FROM attendance a JOIN members m ON m.id=a.member_id WHERE a.session_id=?"
+            "SELECT m.*, a.response, a.conflicted FROM attendance a JOIN members m ON m.id=a.member_id JOIN sessions s ON s.id=a.session_id WHERE a.session_id=? AND s.status='scheduled'"
             + condition
             + " ORDER BY m.normalised_name",
             params,
@@ -645,7 +685,8 @@ class AttendanceStore:
     ) -> list[sqlite3.Row]:
         return self.connection.execute(
             """SELECT s.*, a.response, a.conflicted FROM attendance a JOIN sessions s ON s.id=a.session_id
-               WHERE a.member_id=? AND s.session_date BETWEEN ? AND ? ORDER BY s.session_date, s.start_time""",
+               WHERE a.member_id=? AND s.session_date BETWEEN ? AND ? AND s.status='scheduled'
+               ORDER BY s.session_date, s.start_time""",
             (memberId, startDate.isoformat(), endDate.isoformat()),
         ).fetchall()
 

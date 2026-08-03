@@ -15,6 +15,7 @@ exporting voter names and attendance counts to CSV files.
 - [Repository layout](.github/repositoryLayout.md)
 - [Requirements management](.github/requirementsManagement.md)
 - [Persistent attendance store](documentation/persistentAttendanceStore/README.md)
+- [Cancelled sessions](documentation/cancelledSessions/README.md)
 
 ## Source files
 
@@ -48,6 +49,18 @@ playwright install chromium
 
 This project expects `organiseMyProjects.logUtils` to be available in the same
 Python environment for centralized logging.
+
+## Development checks
+
+Run the automated checks from the `py312` Conda environment:
+
+```bash
+conda run -n py312 pytest -q
+conda run -n py312 black --check main.py src tests
+conda run -n py312 ruff check main.py src tests
+conda run -n py312 python tests/runLinter.py
+git diff --check
+```
 
 ## First-run login
 
