@@ -18,12 +18,13 @@ from attendanceConfig import (
     resolveScanCutoff,
 )
 from organiseMyProjects.logUtils import getLogger, setApplication  # type: ignore
-from whatsappAttendance import AttendanceExporter
 
 APPLICATION_NAME = "organiseMyFooty"
 
 setApplication(APPLICATION_NAME)
 logger = getLogger(includeConsole=False)
+
+from whatsappAttendance import AttendanceExporter  # noqa: E402
 
 
 @dataclass
@@ -300,6 +301,12 @@ def run(config: Config) -> None:
     appLogger.value("groups", ", ".join(config.runtime.effectiveGroupNames))
     appLogger.value("dryRun", config.runtime.dryRun)
     appLogger.value("logLevel", config.runtime.logLevel)
+    appLogger.value("debug", config.runtime.logLevel == logging.DEBUG)
+    appLogger.value("override", config.runtime.override)
+    appLogger.value(
+        "scanSince",
+        config.runtime.scanSince.isoformat() if config.runtime.scanSince else "none",
+    )
 
     AttendanceExporter(config.runtime).run()
 

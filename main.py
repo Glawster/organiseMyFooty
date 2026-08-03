@@ -327,6 +327,12 @@ def run(config: Config) -> None:
     logger.value("groups", ", ".join(config.runtime.effectiveGroupNames))
     logger.value("dryRun", config.runtime.dryRun)
     logger.value("logLevel", config.runtime.logLevel)
+    logger.value("debug", config.runtime.logLevel == logging.DEBUG)
+    logger.value("override", config.runtime.override)
+    logger.value(
+        "scanSince",
+        config.runtime.scanSince.isoformat() if config.runtime.scanSince else "none",
+    )
 
     AttendanceExporter(config.runtime).run()
 

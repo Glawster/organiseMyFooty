@@ -160,6 +160,7 @@ class WhatsAppPollScraper:
                             )
                         continue
                     self.navigation.scrollChatToLatest(page)
+                    noHistoryProgressPasses = 0
 
                     for scrollPass in range(120):
                         pollLocators = self.discovery.findPollCards(page)
@@ -220,7 +221,16 @@ class WhatsAppPollScraper:
                             boundaryReason = "date_window"
                             break
 
-                        self.navigation.scrollChatHistory(page, scrollPasses=1)
+                        madeHistoryProgress = self.navigation.scrollChatHistory(
+                            page, scrollPasses=1
+                        )
+                        if madeHistoryProgress:
+                            noHistoryProgressPasses = 0
+                        else:
+                            noHistoryProgressPasses += 1
+                            if noHistoryProgressPasses >= 3:
+                                self.logger.info("chat history exhausted")
+                                break
                         page.wait_for_timeout(900)
 
                     if self.hasReachedPollLimit(pollCount):

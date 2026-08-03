@@ -669,6 +669,29 @@ def test_extract_poll_date_text_uses_previous_sibling_date_as_legacy_fallback():
     assert discovery.extractPollDateText(item, item.text) == "11/05/2026"
 
 
+def test_extract_poll_date_text_uses_chat_start_date_header():
+    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+    item = StubItem("Sunday 7pm Football Factory\nView votes")
+    item.evaluate = lambda *_args, **_kwargs: {
+        "visibleDateHeaders": [],
+        "chatDateHeaders": ["24/07/2026"],
+        "attributedDates": [],
+        "previousSiblingDates": [],
+    }
+
+    rawDateText = discovery.extractPollDateText(item, item.text)
+
+    assert rawDateText == "24/07/2026"
+    assert (
+        parser.calculateSessionDateText(
+            pollTitle="Sunday 7pm Football Factory",
+            pollDateText=parser.normaliseDateText(rawDateText),
+        )
+        == "20260726 19:00"
+    )
+
+
 def test_extract_poll_date_text_reads_short_year_date_from_source_text():
     parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
     discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
@@ -1209,6 +1232,146 @@ class FakePage:
         self.pressed.append(key)
 
 
+class FakeEmptyCollection:
+    def count(self):
+        return 0
+
+
+class FakeDialogMouse:
+    def wheel(self, *_args):
+        pass
+
+
+class FakeVirtualDialogPage:
+    def __init__(self):
+        self.mouse = FakeDialogMouse()
+
+    def wait_for_timeout(self, *_args):
+        pass
+
+
+class FakeVirtualDialogPanel:
+    def __init__(self, snapshots):
+        self.snapshots = snapshots
+        self.snapshotIndex = 0
+        self.page = FakeVirtualDialogPage()
+
+    def evaluate(self, *_args):
+        if self.snapshotIndex < len(self.snapshots) - 1:
+            self.snapshotIndex += 1
+            return {"moved": True, "atEnd": False, "count": 2}
+        return {"moved": False, "atEnd": True, "count": 2}
+
+    def get_by_text(self, *_args, **_kwargs):
+        return FakeEmptyCollection()
+
+    def hover(self):
+        pass
+
+    def inner_text(self, timeout=None):
+        return self.snapshots[self.snapshotIndex]
+
+
+class FakeExpandControl:
+    def __init__(self, panel):
+        self.panel = panel
+
+    def click(self, timeout=None, force=False):
+        self.panel.snapshotIndex = 1
+
+    def is_visible(self, timeout=None):
+        return True
+
+    def scroll_into_view_if_needed(self, timeout=None):
+        pass
+
+
+class FakeExpandCollection:
+    def __init__(self, panel):
+        self.panel = panel
+
+    def count(self):
+        return 1 if self.panel.snapshotIndex == 0 else 0
+
+    def nth(self, index):
+        assert index == 0
+        return FakeExpandControl(self.panel)
+
+
+class FakeSeeAllDialogPanel(FakeVirtualDialogPanel):
+    def evaluate(self, *_args):
+        return {"moved": False, "atEnd": True, "count": 0, "results": []}
+
+    def get_by_text(self, *_args, **_kwargs):
+        return FakeExpandCollection(self)
+
+
+class FakeSequentialExpandControl(FakeExpandControl):
+    def click(self, timeout=None, force=False):
+        self.panel.snapshotIndex += 1
+        self.panel.clickCount += 1
+
+
+class FakeSequentialExpandCollection(FakeExpandCollection):
+    def count(self):
+        return int(self.panel.snapshotIndex < len(self.panel.snapshots) - 1)
+
+    def nth(self, index):
+        assert index == 0
+        return FakeSequentialExpandControl(self.panel)
+
+
+class FakeSequentialSeeAllDialogPanel(FakeSeeAllDialogPanel):
+    def __init__(self, snapshots):
+        super().__init__(snapshots)
+        self.clickCount = 0
+
+    def get_by_text(self, *_args, **_kwargs):
+        return FakeSequentialExpandCollection(self)
+
+
+def test_expand_all_voters_collects_each_virtualised_snapshot():
+    dialog = PollDialog(_make_config(), DEFAULT_SELECTORS)
+    snapshots = [
+        "Sunday 2pm Football Factory\nYes\nAlex\nBlair\nCasey\nNo",
+        "Sunday 2pm Football Factory\nYes\nDevon\nElliot\nFrankie\nNo",
+        "Sunday 2pm Football Factory\nYes\nGray\nHarper\nNo",
+    ]
+    panel = FakeVirtualDialogPanel(snapshots)
+
+    captured = dialog.expandAllVoters(panel, initialText=snapshots[0])
+
+    assert captured == snapshots
+
+
+def test_expand_all_voters_clicks_exact_see_all_more_control():
+    dialog = PollDialog(_make_config(), DEFAULT_SELECTORS)
+    snapshots = [
+        "Sunday 2pm Football Factory\nYes\nAlex\nBlair\nCasey\nDevon\nElliot\nNo",
+        "Sunday 2pm Football Factory\nYes\nAlex\nBlair\nCasey\nDevon\nElliot\nFrankie\nGray\nHarper\nNo",
+    ]
+    panel = FakeSeeAllDialogPanel(snapshots)
+
+    captured = dialog.expandAllVoters(panel, initialText=snapshots[0])
+
+    assert captured == snapshots
+
+
+def test_expand_all_voters_rechecks_controls_after_panel_replacement():
+    dialog = PollDialog(_make_config(), DEFAULT_SELECTORS)
+    snapshots = [
+        "Thursday 8pm LLC\nYes\nAlex\nBlair\nCasey\nDevon\nElliot\nNo\nMina",
+        "Thursday 8pm LLC\nYes\nAlex\nBlair\nCasey\nDevon\nElliot\nNo\nMina\nNoel",
+        "Thursday 8pm LLC\nYes\nAlex\nBlair\nCasey\nDevon\nElliot\nFrankie\nGray\nHarper\nNo\nMina\nNoel",
+    ]
+    panel = FakeSequentialSeeAllDialogPanel(snapshots)
+
+    captured = dialog.expandAllVoters(panel, initialText=snapshots[0])
+
+    assert panel.clickCount == 2
+    assert captured == [snapshots[0], snapshots[2]]
+
+
 def test_close_dialog_uses_close_button():
     dialog = PollDialog(_make_config(), DEFAULT_SELECTORS)
     control = FakeControl(True)
@@ -1295,17 +1458,54 @@ class FakeMissingSearchControl(FakeControl):
 
 
 class FakeTextMatch:
-    def __init__(self):
+    def __init__(self, visible=True):
         self.first = self
         self.clicked = False
+        self.visible = visible
+
+    def count(self):
+        return 1
+
+    def nth(self, index):
+        assert index == 0
+        return self
+
+    def is_visible(self, timeout=None):
+        return self.visible
 
     def click(self, timeout=None):
         self.clicked = True
 
 
 class FakeMissingTextMatch(FakeTextMatch):
+    def __init__(self):
+        super().__init__(visible=False)
+
     def click(self, timeout=None):
         raise TimeoutError("missing group")
+
+
+class FakeTextMatches:
+    def __init__(self, matches):
+        self.matches = matches
+
+    def count(self):
+        return len(self.matches)
+
+    def nth(self, index):
+        return self.matches[index]
+
+
+class FakeDelayedTextMatches(FakeTextMatches):
+    def __init__(self, matches, emptyCounts=1):
+        super().__init__(matches)
+        self.emptyCounts = emptyCounts
+
+    def count(self):
+        if self.emptyCounts:
+            self.emptyCounts -= 1
+            return 0
+        return super().count()
 
 
 class FakeOpenGroupPage:
@@ -1365,6 +1565,61 @@ def test_open_group_retries_search_after_reopening_search():
     assert page.text_match.clicked is True
 
 
+def test_open_group_skips_hidden_exact_text_match():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    search_box = FakeSearchControl()
+    hidden_match = FakeTextMatch(visible=False)
+    visible_match = FakeTextMatch()
+    page = FakeOpenGroupPage({'[aria-label="Search or start a new chat"]': search_box})
+    page.text_match = FakeTextMatches([hidden_match, visible_match])
+
+    navigation.openGroup(page, "HWFC Information")
+
+    assert hidden_match.clicked is False
+    assert visible_match.clicked is True
+
+
+def test_open_group_waits_for_async_search_results():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    search_box = FakeSearchControl()
+    visible_match = FakeTextMatch()
+    page = FakeOpenGroupPage({'[aria-label="Search or start a new chat"]': search_box})
+    page.text_match = FakeDelayedTextMatches([visible_match])
+
+    navigation.openGroup(page, "HWFC Information")
+
+    assert visible_match.clicked is True
+    assert 750 in page.waits
+
+
+def test_open_group_uses_chat_list_search_not_in_chat_search():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    chat_list_search = FakeSearchControl()
+    in_chat_search = FakeSearchControl()
+    page = FakeOpenGroupPage(
+        {
+            '#side [aria-label="Search or start a new chat"]': chat_list_search,
+            '[placeholder="Search"]': in_chat_search,
+        }
+    )
+
+    navigation.openGroup(page, "HWFC Information")
+
+    assert chat_list_search.typed == ["HWFC Information"]
+    assert in_chat_search.typed == []
+
+
+def test_open_group_replaces_existing_chat_list_search_query():
+    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+    active_search = FakeSearchControl()
+    page = FakeOpenGroupPage({'#side input[placeholder="Search"]': active_search})
+
+    navigation.openGroup(page, "HWFC Information")
+
+    assert active_search.filled == [""]
+    assert active_search.typed == ["HWFC Information"]
+
+
 def test_open_group_reports_missing_exact_group_name():
     navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
     search_box = FakeSearchControl()
@@ -1419,9 +1674,10 @@ def test_scroll_chat_history_skips_mouse_wheel_when_preferred_panel_scrolls():
         }
     )
 
-    navigation.scrollChatHistory(page)
+    madeProgress = navigation.scrollChatHistory(page)
 
     assert page.mouse.wheels == []
+    assert madeProgress is True
 
 
 def test_scroll_chat_history_falls_back_to_mouse_wheel_without_preferred_scroll():
@@ -1434,6 +1690,7 @@ def test_scroll_chat_history_falls_back_to_mouse_wheel_without_preferred_scroll(
         }
     )
 
-    navigation.scrollChatHistory(page)
+    madeProgress = navigation.scrollChatHistory(page)
 
     assert page.mouse.wheels == [(0, -2500)]
+    assert madeProgress is False

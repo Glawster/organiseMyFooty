@@ -103,6 +103,31 @@ class PollDiscovery:
                 return values;
             };
 
+            const collectDateAttributes = (root) => {
+                const values = [];
+                const seen = new Set();
+                const add = (value) => {
+                    const text = (value || "").trim();
+                    const matches = text.match(
+                        /\b\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4})\b/g
+                    ) || [];
+                    for (const match of matches) {
+                        if (!seen.has(match)) {
+                            seen.add(match);
+                            values.push(match);
+                        }
+                    }
+                };
+                for (const el of root?.querySelectorAll?.(
+                    '[data-pre-plain-text], [aria-label], [title]'
+                ) || []) {
+                    add(el.getAttribute('data-pre-plain-text'));
+                    add(el.getAttribute('aria-label'));
+                    add(el.getAttribute('title'));
+                }
+                return values;
+            };
+
             const textPreview = (el) => (el?.innerText || el?.textContent || "")
                 .replace(/\s+/g, " ")
                 .trim()
@@ -185,6 +210,34 @@ class PollDiscovery:
                         || Math.abs(item.bottom - previous.bottom) > 2;
                 });
 
+            const chatDateHeaders = Array.from(document.querySelectorAll(
+                '[data-testid*="date" i], [role="separator"], time'
+            ))
+                .flatMap((el) => collectDateTexts(el).map((text) => ({
+                    text,
+                    rect: el.getBoundingClientRect(),
+                })))
+                .filter((item) => item.rect.bottom <= messageRect.top + 5)
+                .sort((a, b) => b.rect.bottom - a.rect.bottom)
+                .map((item) => item.text);
+
+            const attributedDates = collectDateAttributes(document)
+                .map((text) => ({ text, element: Array.from(document.querySelectorAll(
+                    '[data-pre-plain-text], [aria-label], [title]'
+                )).find((el) => [
+                    el.getAttribute('data-pre-plain-text'),
+                    el.getAttribute('aria-label'),
+                    el.getAttribute('title'),
+                ].some((value) => (value || '').includes(text))) }))
+                .filter((item) => item.element)
+                .map((item) => ({
+                    text: item.text,
+                    rect: item.element.getBoundingClientRect(),
+                }))
+                .filter((item) => item.rect.bottom <= messageRect.top + 5)
+                .sort((a, b) => b.rect.bottom - a.rect.bottom)
+                .map((item) => item.text);
+
             return {
                 messageNodeDiagnostics: {
                     tagName: messageNode.tagName,
@@ -197,6 +250,8 @@ class PollDiscovery:
                     visualLookupTop: messageRect.top,
                 },
                 visibleDateHeaders: visibleDateHeaders.map((item) => item.text),
+                chatDateHeaders,
+                attributedDates,
                 previousSiblingDates,
             };
         }
@@ -221,6 +276,8 @@ class PollDiscovery:
             or payload.get("precedingVisibleDates")
             or []
         )
+        chatDateHeaders = payload.get("chatDateHeaders") or []
+        attributedDates = payload.get("attributedDates") or []
         messageNodeDiagnostics = payload.get("messageNodeDiagnostics") or {}
         if messageNodeDiagnostics:
             self.logger.debug(
@@ -235,13 +292,17 @@ class PollDiscovery:
                 messageNodeDiagnostics.get("previousSiblingText"),
             )
         self.logger.debug(
-            "date candidates visible headers=%s previous sibling dates=%s",
+            "date candidates visible headers=%s chat headers=%s attributes=%s previous sibling dates=%s",
             visibleDateHeaders[:5],
+            chatDateHeaders[:5],
+            attributedDates[:5],
             previousSiblingDates,
         )
 
         for key, values in (
             ("visibleDateHeaders", visibleDateHeaders),
+            ("chatDateHeaders", chatDateHeaders),
+            ("attributedDates", attributedDates),
             ("previousSiblingDates", previousSiblingDates),
         ):
             for value in values:
