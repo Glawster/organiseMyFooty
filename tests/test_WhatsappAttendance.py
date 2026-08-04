@@ -1279,11 +1279,17 @@ class FakeExpandControl:
     def click(self, timeout=None, force=False):
         self.panel.snapshotIndex = 1
 
+    def evaluate(self, *_args):
+        return "Yes"
+
     def is_visible(self, timeout=None):
         return True
 
     def scroll_into_view_if_needed(self, timeout=None):
         pass
+
+    def evaluate(self, *_args):
+        return "Yes"
 
 
 class FakeExpandCollection:
@@ -1370,6 +1376,13 @@ def test_expand_all_voters_rechecks_controls_after_panel_replacement():
 
     assert panel.clickCount == 2
     assert captured == [snapshots[0], snapshots[2]]
+
+
+def test_expanded_voter_snapshot_restores_missing_option_heading():
+    dialog = PollDialog(_make_config(), DEFAULT_SELECTORS)
+
+    assert dialog.labelExpandedSnapshot("Alice\nBob", "Yes") == "Yes\nAlice\nBob"
+    assert dialog.labelExpandedSnapshot("Yes\nAlice\nBob", "Yes") == ("Yes\nAlice\nBob")
 
 
 def test_close_dialog_uses_close_button():
