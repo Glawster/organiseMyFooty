@@ -11,9 +11,9 @@ from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
 from whatsapp.selectors import DEFAULT_SELECTORS, WhatsAppSelectors
 
 from whatsapp.scraper import WhatsAppPollScraper
-from whatsapp.cache import PollCacheStore
 from whatsapp.parsing import PollTextParser
 from whatsapp.reports import AttendanceReportBuilder
+from whatsapp.store import AttendanceStore
 
 logger = getLogger()
 
@@ -27,13 +27,15 @@ class AttendanceExporter:
         self.logger = logger
 
         self.parser = PollTextParser(config=self.config, selectors=self.selectors)
-        self.cacheStore = PollCacheStore(config=self.config, parser=self.parser)
+        self.attendanceStore = AttendanceStore(
+            self.config.attendanceStorePath, self.parser
+        ).open()
         self.reportBuilder = AttendanceReportBuilder(parser=self.parser)
         self.pollScraper = WhatsAppPollScraper(
             config=self.config,
             selectors=self.selectors,
             parser=self.parser,
-            cacheStore=self.cacheStore,
+            attendanceStore=self.attendanceStore,
         )
 
     def getMonthStampedPath(self, stem: str, suffix: str) -> Path:
@@ -52,25 +54,54 @@ class AttendanceExporter:
         self.logger.info("only including polls within configured month window")
         self.logger.info("output dir: %s", self.config.outputDir)
 
+        self.logger.info("attendance store: %s", self.config.attendanceStorePath)
+        self.logger.info(
+            "scan mode: %s; cutoff: %s",
+            "override" if self.config.override else "captured-poll boundary",
+            self.config.scanSince.isoformat() if self.config.scanSince else "none",
+        )
         records = self.pollScraper.collectPollAttendance()
+        records = self.attendanceStore.attendanceRecords(
+            self.config.monthWindow.startDate, self.config.monthWindow.endDate
+        )
         self.logger.info("poll vote rows collected: %s", len(records))
 
         rawRows = [asdict(record) for record in records]
         summaryRows = self.reportBuilder.buildSummaryRows(records)
         reportRows = self.reportBuilder.buildAttendanceReportRows(records)
+        self.logChangeSummary()
 
         if not rawRows:
             self.logger.warning(
                 "no poll rows collected; exports will not be overwritten"
             )
+            self.logger.done("attendance export")
             return
 
-        self.writePollRows(rawRows)
         self.writeSummaryRows(summaryRows)
         self.writeReportRows(reportRows)
         self.writeSocialMediaSummaryText(reportRows)
         self.writePreviewJson(rawRows, summaryRows, reportRows)
         self.logger.done("attendance export")
+
+    def logChangeSummary(self) -> None:
+        changes = self.attendanceStore.summary
+        self.logger.info(
+            "attendance changes: sessions +%s ~%s -%s =%s; members +%s ~%s -%s =%s; attendance +%s ~%s -%s =%s conflicts=%s",
+            changes.sessionsAdded,
+            changes.sessionsUpdated,
+            changes.sessionsRemoved,
+            changes.sessionsUnchanged,
+            changes.membersAdded,
+            changes.membersUpdated,
+            changes.membersRemoved,
+            changes.membersUnchanged,
+            changes.attendanceAdded,
+            changes.attendanceUpdated,
+            changes.attendanceRemoved,
+            changes.attendanceUnchanged,
+            changes.attendanceConflicted,
+        )
 
     # ## csv write utilities
     def writeAttendanceReportCsv(self, path: Path, rows: list[list[str]]) -> None:
@@ -78,30 +109,6 @@ class AttendanceExporter:
         with path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
             writer.writerows(rows)
-
-    def writePollRows(self, rawRows: list[dict]) -> None:
-        pollsPath = self.getMonthStampedPath("polls", ".csv")
-        if self.config.dryRun:
-            self.logger.info(
-                "dry run: skipping polls.csv write (%s rows): %s",
-                len(rawRows),
-                pollsPath,
-            )
-            return
-        self.logger.action("write polls.csv rows: %s: %s", len(rawRows), pollsPath)
-
-        writeCsv(
-            pollsPath,
-            rawRows,
-            [
-                "pollTitle",
-                "pollDateText",
-                "sessionDateText",
-                "option",
-                "voterName",
-                "sourceHint",
-            ],
-        )
 
     def writeReportRows(self, reportRows: list[list[str]]) -> None:
         reportPath = self.getMonthStampedPath("attendanceReport", ".csv")
@@ -182,8 +189,7 @@ class AttendanceExporter:
             yesCount = statuses.count("yes")
 
             lines.append(
-                f"- {voterName:<{voterNameWidth}}... "
-                f"{yesCount}/{totalSessions} sessions attended"
+                f"- {voterName:<{voterNameWidth}}... " f"{yesCount}/{totalSessions}"
             )
 
         return "\n".join(lines)

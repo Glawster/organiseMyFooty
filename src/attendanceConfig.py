@@ -34,14 +34,20 @@ class RuntimeConfig:
     includeNoVotes: bool
     resume: bool
     pollTitleFilter: Optional[str]
-    usePollCache: bool = False
     strictMonth: bool = True
     myName: str = "Andy Wilson"
     groupNames: tuple[str, ...] = ()
+    override: bool = False
+    scanSince: Optional[date] = None
+    storePath: Optional[Path] = None
 
     @property
     def effectiveGroupNames(self) -> tuple[str, ...]:
         return self.groupNames or (self.groupName,)
+
+    @property
+    def attendanceStorePath(self) -> Path:
+        return self.storePath or self.outputDir / "attendance.sqlite3"
 
 
 def resolveMonthWindow(monthText: Optional[str] = None) -> MonthWindow:
@@ -93,6 +99,23 @@ def defaultOutputDir(
 
 def defaultUserDataDir() -> Path:
     return Path.home() / ".local" / "share" / "organiseMyWhatsApp" / "profile"
+
+
+def resolveScanCutoff(
+    override: bool, scanSince: Optional[date], today: Optional[date] = None
+) -> Optional[date]:
+    """Resolve the inclusive override cutoff using local calendar dates."""
+    if scanSince is not None and not override:
+        raise ValueError("--scan-since requires --override")
+    if not override:
+        return None
+    localToday = today or date.today()
+    if scanSince is not None:
+        if scanSince > localToday:
+            raise ValueError("--scan-since cannot be a future date")
+        return scanSince
+    monthIndex = localToday.year * 12 + localToday.month - 1 - 2
+    return date(monthIndex // 12, monthIndex % 12 + 1, 1)
 
 
 def writeCsv(path: Path, rows: list[dict], fieldNames: list[str]) -> None:

@@ -47,13 +47,29 @@ class WhatsAppNavigation:
         self.prepareForGroupSearch(page)
         self.typeInSearchBox(page, groupName)
 
-        candidate = page.get_by_text(groupName, exact=True).first
-        try:
-            candidate.click(timeout=self.config.timeoutMs)
-        except Exception as exc:
+        lastError: Exception | None = None
+        groupOpened = False
+        for attempt in range(5):
+            candidates = page.get_by_text(groupName, exact=True)
+            for index in range(candidates.count()):
+                candidate = candidates.nth(index)
+                try:
+                    if not candidate.is_visible(timeout=500):
+                        continue
+                    candidate.click(timeout=self.config.timeoutMs)
+                    groupOpened = True
+                    break
+                except Exception as exc:
+                    lastError = exc
+            if groupOpened:
+                break
+            if attempt < 4:
+                page.wait_for_timeout(750)
+
+        if not groupOpened:
             raise GroupNotFoundError(
                 f'WhatsApp group not found with exact name: "{groupName}"'
-            ) from exc
+            ) from lastError
         self.waitForChatPanel(page)
         self.logger.info("group opened")
 
@@ -133,6 +149,11 @@ class WhatsAppNavigation:
                     searchBox.click(timeout=self.config.timeoutMs)
                     self.clearSearchBox(page, searchBox)
                     searchBox.type(groupName, delay=40)
+                    self.logger.debug(
+                        "entered group search using selector %s: %s",
+                        selector,
+                        groupName,
+                    )
                     return
                 except Exception as exc:
                     lastError = exc
@@ -282,7 +303,7 @@ class WhatsAppNavigation:
 
         return False
 
-    def scrollChatHistory(self, page, scrollPasses: int = 1) -> None:
+    def scrollChatHistory(self, page, scrollPasses: int = 1) -> bool:
         script = """
         () => {
             const isScrollable = (el) => {
@@ -362,6 +383,7 @@ class WhatsAppNavigation:
         }
         """
 
+        madeProgress = False
         for _ in range(scrollPasses):
             result = None
             try:
@@ -382,8 +404,12 @@ class WhatsAppNavigation:
                 page.wait_for_timeout(1200)
 
                 if self.clickOlderMessagesBanner(page):
+                    madeProgress = True
                     continue
 
                 continue
 
+            madeProgress = True
             page.wait_for_timeout(1200)
+
+        return madeProgress

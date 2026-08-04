@@ -1,4 +1,0 @@
-from __future__ import annotations
-
-POLL_CACHE_VERSION = 2
-RECENT_POLLS_TO_RECHECK = 2

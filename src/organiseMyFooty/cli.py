@@ -15,14 +15,16 @@ from attendanceConfig import (
     defaultUserDataDir,
     ensureOutputDir,
     resolveMonthWindow,
+    resolveScanCutoff,
 )
 from organiseMyProjects.logUtils import getLogger, setApplication  # type: ignore
-from whatsappAttendance import AttendanceExporter
 
 APPLICATION_NAME = "organiseMyFooty"
 
 setApplication(APPLICATION_NAME)
 logger = getLogger(includeConsole=False)
+
+from whatsappAttendance import AttendanceExporter  # noqa: E402
 
 
 @dataclass
@@ -118,6 +120,27 @@ def normaliseGroupNames(groupNames: list[str] | None) -> list[str]:
     return [name.strip() for name in groupNames if name.strip()]
 
 
+def groupNamesMerge(*groupNameLists: list[str]) -> list[str]:
+    """Combine group lists in order without saving duplicate names."""
+    mergedGroupNames = []
+
+    for groupNames in groupNameLists:
+        for groupName in normaliseGroupNames(groupNames):
+            if groupName not in mergedGroupNames:
+                mergedGroupNames.append(groupName)
+
+    return mergedGroupNames
+
+
+def groupNamesResolve(
+    selectedGroupNames: list[str] | None, savedGroupNames: list[str]
+) -> list[str]:
+    """Use an explicit scan selection, otherwise all configured groups."""
+    return normaliseGroupNames(selectedGroupNames) or normaliseGroupNames(
+        savedGroupNames
+    )
+
+
 def formatGroupNames(groupNames: list[str] | tuple[str, ...]) -> str:
     return " + ".join(groupNames)
 
@@ -125,12 +148,16 @@ def formatGroupNames(groupNames: list[str] | tuple[str, ...]) -> str:
 def saveState(groupNames: list[str], month: str | None) -> None:
     stateFile = getStateFile()
     stateFile.parent.mkdir(parents=True, exist_ok=True)
+    state = loadState()
+    savedGroupNames = groupNamesMerge(getStateGroupNames(state), groupNames)
 
-    state = {
-        "groupName": groupNames[0] if groupNames else "",
-        "groupNames": groupNames,
-        "month": month,
-    }
+    state.update(
+        {
+            "groupName": savedGroupNames[0] if savedGroupNames else "",
+            "groupNames": savedGroupNames,
+            "month": month,
+        }
+    )
 
     stateFile.write_text(json.dumps(state, indent=2))
 
@@ -166,18 +193,22 @@ def buildParser(state: dict) -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--cache",
+        "--override",
         action="store_true",
-        help="use cached poll results when available (default is to rescrape polls)",
+        help="continue past captured polls to the two-month horizon",
+    )
+    parser.add_argument(
+        "--scan-since",
+        metavar="YYYY-MM-DD",
+        help="inclusive cutoff; requires --override",
     )
 
     parser.add_argument(
         "--view",
-        dest="viewCache",
+        dest="viewAttendance",
         action="store_true",
-        help="view cached poll records instead of running an export",
+        help="inspect stored attendance for the selected month instead of scanning",
     )
-
     parser.add_argument(
         "--config",
         dest="showConfig",
@@ -217,11 +248,21 @@ def buildConfig(args: argparse.Namespace, dryRun: bool, logLevel: int) -> Config
         includeNoVotes=False,
         resume=False,
         pollTitleFilter=None,
-        usePollCache=args.cache,
         groupNames=groupNames,
+        override=args.override,
+        scanSince=resolveScanCutoff(args.override, parseScanSince(args.scan_since)),
     )
 
     return Config(runtime=runtime)
+
+
+def parseScanSince(value: str | None):
+    if value is None:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError("invalid --scan-since date; expected YYYY-MM-DD") from exc
 
 
 def serialiseRuntimeConfig(runtime: RuntimeConfig) -> dict:
@@ -245,17 +286,12 @@ def serialiseRuntimeConfig(runtime: RuntimeConfig) -> dict:
         "includeNoVotes": runtime.includeNoVotes,
         "resume": runtime.resume,
         "pollTitleFilter": runtime.pollTitleFilter,
-        "usePollCache": runtime.usePollCache,
         "strictMonth": runtime.strictMonth,
         "myName": runtime.myName,
         "effectiveGroupNames": list(runtime.effectiveGroupNames),
-    }
-
-
-def serialiseCachedPolls(recordsByPollKey) -> dict:
-    return {
-        pollKey: [record.__dict__ for record in records]
-        for pollKey, records in recordsByPollKey.items()
+        "override": runtime.override,
+        "scanSince": runtime.scanSince.isoformat() if runtime.scanSince else None,
+        "storePath": str(runtime.attendanceStorePath),
     }
 
 
@@ -265,19 +301,28 @@ def run(config: Config) -> None:
     appLogger.value("groups", ", ".join(config.runtime.effectiveGroupNames))
     appLogger.value("dryRun", config.runtime.dryRun)
     appLogger.value("logLevel", config.runtime.logLevel)
+    appLogger.value("debug", config.runtime.logLevel == logging.DEBUG)
+    appLogger.value("override", config.runtime.override)
+    appLogger.value(
+        "scanSince",
+        config.runtime.scanSince.isoformat() if config.runtime.scanSince else "none",
+    )
 
     AttendanceExporter(config.runtime).run()
 
 
-def viewCache(config: Config) -> None:
+def viewAttendance(config: Config) -> None:
     exporter = AttendanceExporter(config.runtime)
-    recordsByPollKey = exporter.cacheStore.loadPollCache(force=True)
-
     payload = {
         "groupNames": list(config.runtime.effectiveGroupNames),
         "month": config.runtime.monthWindow.monthKey,
-        "cachePath": str(exporter.cacheStore.getPollCachePath()),
-        "polls": serialiseCachedPolls(recordsByPollKey),
+        "storePath": str(config.runtime.attendanceStorePath),
+        "attendance": [
+            record.__dict__
+            for record in exporter.attendanceStore.attendanceRecords(
+                config.runtime.monthWindow.startDate, config.runtime.monthWindow.endDate
+            )
+        ],
     }
 
     print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -287,9 +332,14 @@ def main() -> None:
     state = loadState()
     parser = buildParser(state)
     args = parser.parse_args()
-    args.groupNames = normaliseGroupNames(args.groupNames) or args.savedGroupNames
+    args.groupNames = groupNamesResolve(args.groupNames, args.savedGroupNames)
 
-    if not args.groupNames and not (args.showConfig or args.viewCache):
+    try:
+        resolveScanCutoff(args.override, parseScanSince(args.scan_since))
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    if not args.groupNames and not (args.showConfig or args.viewAttendance):
         parser.error("--group is required.")
 
     dryRun = not args.confirm
@@ -308,8 +358,8 @@ def main() -> None:
         )
         return
 
-    if args.viewCache:
-        viewCache(config)
+    if args.viewAttendance:
+        viewAttendance(config)
         return
 
     run(config)

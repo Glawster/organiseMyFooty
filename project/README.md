@@ -1,8 +1,7 @@
 # Project Records
 
-This folder holds project-specific planning and refactor notes.
+This folder holds project-specific planning, requirements and delivery records.
 
 ## Records
 
-- [TODO](TODO.md) — active project follow-ups and decisions
-- [README refactor](README-refactor.md) — proposed source layout for the WhatsApp attendance refactor
+- [Requirements](requirements/README.md) — stable product requirements and their status

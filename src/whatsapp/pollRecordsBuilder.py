@@ -5,12 +5,16 @@ import re
 
 from attendanceConfig import RuntimeConfig
 from organiseMyProjects.logUtils import drawBox, getLogger  # type: ignore[import]
-from whatsapp.models import PollRecord
+from whatsapp.models import PollRecord, SessionStatus
 from whatsapp.parsing import PollTextParser
 from whatsapp.pollDiscovery import PollDiscovery
 from whatsapp.selectors import WhatsAppSelectors
 
 logger = getLogger()
+
+
+class IncompletePollVotesError(ValueError):
+    """Raised when WhatsApp's displayed vote count exceeds captured voters."""
 
 
 class PollRecordsBuilder:
@@ -36,6 +40,7 @@ class PollRecordsBuilder:
         dialogText: str,
         sourceText: str,
         rawDateText: str = "",
+        dialogTexts: list[str] | None = None,
     ) -> list[PollRecord]:
         pollTitle = self.parser.extractPollTitleFromDialog(dialogText) or (
             self.parser.extractPollTitle(dialog, sourceText=sourceText)
@@ -56,6 +61,7 @@ class PollRecordsBuilder:
             pollDateText=pollDateText,
         )
         sessionDateDisplay = self._formatDateDisplay(sessionDateText)
+        sessionStatus = self.parser.extractSessionStatus(pollTitle)
 
         boxText = "\n".join(
             [
@@ -77,13 +83,45 @@ class PollRecordsBuilder:
             )
             return []
 
-        pollRecords = self.buildOptionRecords(
-            dialogText=dialogText,
-            pollTitle=pollTitle,
-            pollDateText=pollDateText,
-            sessionDateText=sessionDateText,
-            sourceHint=sourceText[:240],
+        if sessionStatus is SessionStatus.CANCELLED:
+            self.logger.value("cancelled session observed", pollTitle)
+            return [
+                PollRecord(
+                    pollTitle=pollTitle,
+                    pollDateText=pollDateText,
+                    sessionDateText=sessionDateText,
+                    option="",
+                    voterName="",
+                    sourceHint=sourceText[:240],
+                    sessionStatus=sessionStatus,
+                )
+            ]
+
+        pollRecordsByIdentity: dict[tuple[str, str], PollRecord] = {}
+        for snapshotText in dialogTexts or [dialogText]:
+            for record in self.buildOptionRecords(
+                dialogText=snapshotText,
+                pollTitle=pollTitle,
+                pollDateText=pollDateText,
+                sessionDateText=sessionDateText,
+                sourceHint=sourceText[:240],
+                sessionStatus=sessionStatus,
+            ):
+                identity = (record.option.casefold(), record.voterName.casefold())
+                pollRecordsByIdentity[identity] = record
+
+        pollRecords = list(pollRecordsByIdentity.values())
+        expectedYesVotes = self.parser.extractOptionVoteCountFromText(
+            sourceText, self.selectors.yesOptionTexts
         )
+        actualYesVotes = sum(
+            record.option.casefold() == "yes" for record in pollRecords
+        )
+        if expectedYesVotes is not None and actualYesVotes < expectedYesVotes:
+            raise IncompletePollVotesError(
+                f"captured {actualYesVotes} of {expectedYesVotes} Yes voters"
+            )
+
         self.logger.value("poll vote rows", len(pollRecords))
         return pollRecords
 
@@ -119,6 +157,7 @@ class PollRecordsBuilder:
         pollDateText: str,
         sessionDateText: str,
         sourceHint: str,
+        sessionStatus: SessionStatus,
     ) -> list[PollRecord]:
         pollRecords: list[PollRecord] = []
 
@@ -133,6 +172,7 @@ class PollRecordsBuilder:
                 option="Yes",
                 voterNames=yesVoters,
                 sourceHint=sourceHint,
+                sessionStatus=sessionStatus,
             )
         )
 
@@ -148,6 +188,7 @@ class PollRecordsBuilder:
                     option="No",
                     voterNames=noVoters,
                     sourceHint=sourceHint,
+                    sessionStatus=sessionStatus,
                 )
             )
 
@@ -161,6 +202,7 @@ class PollRecordsBuilder:
         option: str,
         voterNames: list[str],
         sourceHint: str,
+        sessionStatus: SessionStatus,
     ) -> list[PollRecord]:
         return [
             PollRecord(
@@ -170,6 +212,7 @@ class PollRecordsBuilder:
                 option=option,
                 voterName=voterName,
                 sourceHint=sourceHint,
+                sessionStatus=sessionStatus,
             )
             for voterName in voterNames
         ]

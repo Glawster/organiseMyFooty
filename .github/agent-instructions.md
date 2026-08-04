@@ -1,4 +1,4 @@
-<!-- synced from Glawster/organiseMyProjects -- do not edit directly -->
+<!-- deployed from Glawster/organiseMyProjects release 0.3 -- do not edit directly -->
 # Agent Instructions -- Master Development Guidelines (v2)
 
 # Table of Contents
@@ -34,7 +34,7 @@ If any other repository guidance contradicts this file, this file takes preceden
 1.  Core logic must never depend on UI frameworks\
 2.  Business logic must be testable without GUI\
 3.  GUI layers orchestrate --- they do not implement business logic\
-4.  CLI tools must run non-interactively\
+4.  CLI tools must be fully scriptable and capable of running non-interactively\
 5.  File operations must be centralized and reusable\
 6.  Logging must be initialized at entry point\
 7.  Scripts must be safe-by-default\
@@ -247,7 +247,7 @@ Examples:
     --verbose
     --quiet
     --json
-    
+
 ## Universal Options
 
 --help
@@ -302,37 +302,6 @@ All CLI applications should:
 - Support `--confirm` for operations that modify data
 - Default to safe (dry-run) behaviour where destructive operations are possible
 
-All CLI tools must:
-
--   Use argparse\
--   Validate paths before processing\
--   Log start and completion\
--   Exit with 0 on success, non-zero on failure\
--   Support --confirm (safe-by-default)\
--   Provide clear help text\
--   Print a completion summary
-
-### Required Pattern
-
-``` python
-parser.add_argument(
-    "-y",
-    "--confirm",
-    dest="confirm",
-    action="store_true",
-    help="execute changes (default is dry-run)",
-)
-dryRun = not args.confirm
-```
-
-Command behaviour:
-
-| Command | Behaviour |
-| --- | --- |
-| `python main.py` | dry-run / safe preview |
-| `python main.py --confirm` | execute changes |
-
-Never expose `--dry-run` as the CLI flag. Use `dryRun` only as the internal boolean.
 
 # Environment & Dependency Policy
 
@@ -341,6 +310,14 @@ Never expose `--dry-run` as the CLI flag. Use `dryRun` only as the internal bool
 -   Do not auto-install dependencies at runtime\
 -   Fail fast if external tools are missing\
 -   Validate system requirements explicitly
+
+## Python Environment Standard
+
+- Use Conda as the preferred Python environment manager.
+- Every Python application should provide an `environment.yml`.
+- Declare package dependencies in `pyproject.toml`.
+- Use the Conda environment to install the project in editable mode.
+- Document Conda installation before `venv` alternatives.
 
 # Patterns
 
