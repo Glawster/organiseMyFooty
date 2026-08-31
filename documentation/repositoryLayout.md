@@ -1,4 +1,4 @@
-<!-- deployed from Glawster/organiseMyProjects release 0.3 -- do not edit directly -->
+<!-- deployed from Glawster/organiseMyProjects release 0.5 -- do not edit directly -->
 # Repository layout
 
 This managed guide explains what belongs in each top-level directory and where
@@ -8,6 +8,10 @@ repository-specific additions or exceptions belong in
 
 The central convention is to keep project-management records separate from the
 durable documentation and content that a project produces.
+
+Status has one owner. Requirements describe obligations, design documentation
+describes behaviour, and Git records delivery history.
+`project/currentIncrement.md` alone records transient implementation status.
 
 ## Choosing between `project/` and `documentation/`
 
@@ -50,7 +54,7 @@ The required files depend on the project's role:
 - a reusable library module or package is imported by other code and does not
   require `main.py` or another executable entry point;
 - a packaged command-line tool declares a console-script entry point that
-  normally calls a `main()` function inside its package;
+  normally calls a `main()` function inside its package./fmsat;
 - a standalone application keeps `main.py` at its project root.
 
 Do not add a placeholder `main.py` to a library merely to match an application
@@ -114,6 +118,7 @@ normally be ignored unless an export is deliberately approved for publication.
 | Path | Purpose |
 | --- | --- |
 | `project/project.yaml` | Current project purpose, scope, audience, risks and milestones. |
+| `project/currentIncrement.md` | Authoritative transient status for the active increment: objective, scope, acceptance work, verification still required and immediate next action. |
 | `project/requirements/features/` | Requirement records at every lifecycle stage, kept at stable paths. |
 | `project/requirements/templates/` | Templates used to create consistent project records. |
 | `project/adr/` | Significant project-shaping decisions and their consequences. |
@@ -136,10 +141,18 @@ rules should live in `project/requirements/README.md` and
 - Keep Mermaid source (`.mmd`) beside the document or subject it explains.
 - Link from the root README to living guides so contributors can discover them.
 - Prefer relative links so documentation works both locally and on GitHub.
+- Do not copy transient increment progress into requirements, ADRs, README files
+  or durable design documentation. Update those artifacts only when the
+  obligation, decision, introduction or implemented behaviour they own changes.
+- Requirement lifecycle states such as `ToDo`, `InProgress` and `Completed` are
+  durable workflow metadata and may remain in requirement records and indexes;
+  they are distinct from transient implementation detail.
+- Use tests as executable acceptance and regression evidence and Git commits,
+  pull requests, tags and releases as delivery history.
 
 ## Applying this shared layout
 
-This is a managed baseline stored at `.github/repositoryLayout.md` in every
+This is a managed baseline stored at `documentation/repositoryLayout.md` in every
 repository. Do not edit a downstream copy directly because a later sync will
 replace it.
 
@@ -161,6 +174,7 @@ top-level directory should represent a real, distinct responsibility.
 
 | New item | Location | Reason |
 | --- | --- | --- |
+| Active development state and handoff | `project/currentIncrement.md` | It records the active deliverable and operational handoff. |
 | A requirement at any lifecycle stage | `project/requirements/features/` | Its stable path remains valid as status changes. |
 | The decision to use a particular implementation approach | `project/adr/` | It records a consequential choice and rationale. |
 | An explanation of implemented behaviour | `documentation/` | It is maintained product or technical knowledge. |
@@ -173,3 +187,41 @@ top-level directory should represent a real, distinct responsibility.
 
 When a document changes category, move it rather than copying it, update links
 in the same change and preserve its version-control history.
+
+## `omp/` — Shared Runtime Infrastructure
+
+The `omp` package contains runtime support modules synchronised from the
+canonical `Glawster/organiseMyProjects` repository.
+
+The name `omp` stands for **organiseMyProjects**.
+
+Unlike the files in `.github/`, which define development standards for AI
+agents and contributors, the `omp` package contains Python modules used at
+application runtime.
+
+Typical contents include:
+
+```text
+omp/
+├── __init__.py
+├── logUtils.py
+├── version.py
+├── configUtils.py
+├── cliUtils.py
+└── ...
+```
+
+Rules
+
+- Files originate in the canonical `organiseMyProjects` repository.
+- Projects import these modules using `from omp...`.
+- Projects must not import runtime modules directly from
+  `organiseMyProjects`.
+- Local modifications should not be made to synchronised files.
+- Behavioural changes are implemented in `organiseMyProjects` and then
+  synchronised into consuming repositories.
+- Only general-purpose infrastructure belongs in `omp`.
+- Application-specific business logic must never be placed in `omp`.
+
+This approach keeps every project self-contained and deployable while
+maintaining a single canonical implementation.

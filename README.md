@@ -12,8 +12,8 @@ exporting voter names and attendance counts to CSV files.
 - [Project records](project/README.md)
 - [Copilot instructions](.github/copilot-instructions.md)
 - [Project-specific instructions](.github/additional-instructions.md)
-- [Repository layout](.github/repositoryLayout.md)
-- [Requirements management](.github/requirementsManagement.md)
+- [Repository layout](documentation/repositoryLayout.md)
+- [Requirements management](documentation/requirementsManagement.md)
 - [Persistent attendance store](documentation/persistentAttendanceStore/README.md)
 - [Cancelled sessions](documentation/cancelledSessions/README.md)
 
@@ -37,17 +37,7 @@ conda activate organise-my-footy
 playwright install chromium
 ```
 
-Alternatively, use a virtual environment:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
-playwright install chromium
-```
-
-This project expects `organiseMyProjects.logUtils` to be available in the same
+This project expects `organiseMyFooty.logUtils` to be available in the same
 Python environment for centralized logging.
 
 ## Development checks
