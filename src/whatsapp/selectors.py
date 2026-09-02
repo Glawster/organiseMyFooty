@@ -31,26 +31,34 @@ class WhatsAppSelectors:
     # Interactive search-box selectors — must be clickable/typeable.
     # Used by openGroup to find and focus the search input.
     searchBoxCandidates: tuple[str, ...] = (
+        # Once a query has been entered WhatsApp shortens the label/placeholder.
+        # Keep these scoped to #side so they cannot select the in-chat search box.
+        '#side [aria-label="Search input textbox"]',
+        '#side input[placeholder="Search"]',
+        '#side [contenteditable="true"][role="textbox"]',
+        '#side input[type="text"]',
+        '#side [role="textbox"]',
+        '#side [aria-label="Search or start a new chat"]',
+        '#side [placeholder="Search or start a new chat"]',
+        '#side [data-testid="search-input"]',
         '[aria-label="Search or start a new chat"]',
         '[placeholder="Search or start a new chat"]',
-        '[placeholder="Search"]',
-        '[data-testid="search-input"]',
-        '[contenteditable="true"][role="textbox"][aria-label*="Search"]',
-        '[contenteditable="true"][role="textbox"][title*="Search"]',
         '[title="Search or start a new chat"]',
         # Legacy data-tab attributes (older WhatsApp Web builds)
-        '[contenteditable="true"][data-tab="3"]',
-        '[contenteditable="true"][data-tab="4"]',
-        'div[role="textbox"]',
+        '#side [contenteditable="true"][data-tab="3"]',
+        '#side [contenteditable="true"][data-tab="4"]',
     )
 
     searchActivatorCandidates: tuple[str, ...] = (
+        '#side [aria-label="Search input textbox"]',
+        '#side input[placeholder="Search"]',
+        '#side [role="textbox"]',
+        '#side [aria-label="Search or start a new chat"]',
+        '#side [title="Search or start a new chat"]',
+        '#side [data-testid="chat-list-search"]',
         '[aria-label="Search or start a new chat"]',
         '[title="Search or start a new chat"]',
-        'button[aria-label="Search"]',
-        '[role="button"][aria-label="Search"]',
         '[data-testid="chat-list-search"]',
-        '[data-icon="search"]',
     )
 
     chatHeaderCandidates: tuple[str, ...] = (

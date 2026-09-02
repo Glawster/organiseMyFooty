@@ -27,7 +27,7 @@ from whatsapp.exporter import AttendanceExporter
 # ---------------------------------------------------------------------------
 
 
-def _make_config(**overrides) -> RuntimeConfig:
+def _makeConfig(**overrides) -> RuntimeConfig:
     defaults = dict(
         groupName="Test Group",
         monthWindow=MonthWindow(
@@ -70,13 +70,13 @@ def _record(**overrides) -> PollRecord:
 # ---------------------------------------------------------------------------
 
 
-def test_deduplicate_records_removes_duplicates():
+def testDeduplicateRecordsRemovesDuplicates():
     records = [_record(), _record()]
     result = deduplicateRecords(records)
     assert len(result) == 1
 
 
-def test_runtime_config_defaults_to_strict_month():
+def testRuntimeConfigDefaultsToStrictMonth():
     config = RuntimeConfig(
         groupName="Test Group",
         monthWindow=MonthWindow(
@@ -105,27 +105,27 @@ def test_runtime_config_defaults_to_strict_month():
 # ---------------------------------------------------------------------------
 
 
-def test_extract_likely_time_text():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testExtractLikelyTimeText():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
     assert parser.extractLikelyTimeText("Training\n10:30\nYes") == "10:30"
 
 
-def test_clean_voter_names():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testCleanVoterNames():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
     result = parser.cleanVoterNames(["Alice", "Alice", "10:30", "Yes"])
     assert result == ["Alice"]
 
 
-def test_clean_voter_names_rejects_phone_number_metadata():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testCleanVoterNamesRejectsPhoneNumberMetadata():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
 
     assert parser.cleanVoterNames(["Sammy Leathem", "+44 7810 878563"]) == [
         "Sammy Leathem"
     ]
 
 
-def test_extract_option_vote_count_from_poll_card_text():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testExtractOptionVoteCountFromPollCardText():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
 
     assert (
         parser.extractOptionVoteCountFromText(
@@ -136,20 +136,20 @@ def test_extract_option_vote_count_from_poll_card_text():
     )
 
 
-def test_is_session_in_month_window_returns_true_when_not_strict():
-    parser = PollTextParser(_make_config(strictMonth=False), DEFAULT_SELECTORS)
+def testIsSessionInMonthWindowReturnsTrueWhenNotStrict():
+    parser = PollTextParser(_makeConfig(strictMonth=False), DEFAULT_SELECTORS)
 
     assert parser.isSessionInMonthWindow("20260406 19:00") is True
 
 
-def test_is_session_in_month_window_returns_false_for_out_of_month_strict():
-    parser = PollTextParser(_make_config(strictMonth=True), DEFAULT_SELECTORS)
+def testIsSessionInMonthWindowReturnsFalseForOutOfMonthStrict():
+    parser = PollTextParser(_makeConfig(strictMonth=True), DEFAULT_SELECTORS)
 
     assert parser.isSessionInMonthWindow("20260406 19:00") is False
 
 
-def test_calculate_session_date_text_prefers_explicit_date_in_title():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testCalculateSessionDateTextPrefersExplicitDateInTitle():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
 
     assert (
         parser.calculateSessionDateText(
@@ -159,8 +159,8 @@ def test_calculate_session_date_text_prefers_explicit_date_in_title():
     )
 
 
-def test_calculate_session_date_text_accepts_session_prefix():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testCalculateSessionDateTextAcceptsSessionPrefix():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
 
     assert (
         parser.calculateSessionDateText("Session Sunday 7pm", "20260501")
@@ -168,22 +168,22 @@ def test_calculate_session_date_text_accepts_session_prefix():
     )
 
 
-def test_is_valid_session_poll_accepts_session_prefix():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testIsValidSessionPollAcceptsSessionPrefix():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
 
     assert parser.isValidSessionPoll("Session Wednesday 11am") is True
 
 
 class StubDiscoveryWithDate:
-    def __init__(self, raw_date_text: str):
-        self.raw_date_text = raw_date_text
+    def __init__(self, rawDateText: str):
+        self.rawDateText = rawDateText
 
     def extractPollDateText(self, locator, sourceText: str) -> str:
-        return self.raw_date_text
+        return self.rawDateText
 
 
-def test_build_poll_records_from_dialog_skips_out_of_month_when_strict():
-    config = _make_config(strictMonth=True)
+def testBuildPollRecordsFromDialogSkipsOutOfMonthWhenStrict():
+    config = _makeConfig(strictMonth=True)
     parser = PollTextParser(config, DEFAULT_SELECTORS)
     builder = PollRecordsBuilder(
         config=config,
@@ -202,8 +202,8 @@ def test_build_poll_records_from_dialog_skips_out_of_month_when_strict():
     assert records == []
 
 
-def test_build_poll_records_from_dialog_keeps_out_of_month_when_not_strict():
-    config = _make_config(strictMonth=False)
+def testBuildPollRecordsFromDialogKeepsOutOfMonthWhenNotStrict():
+    config = _makeConfig(strictMonth=False)
     parser = PollTextParser(config, DEFAULT_SELECTORS)
     builder = PollRecordsBuilder(
         config=config,
@@ -223,8 +223,8 @@ def test_build_poll_records_from_dialog_keeps_out_of_month_when_not_strict():
     assert records[0].sessionDateText == "20260406 19:00"
 
 
-def test_build_poll_records_combines_virtualised_voter_snapshots():
-    config = _make_config(strictMonth=False)
+def testBuildPollRecordsCombinesVirtualisedVoterSnapshots():
+    config = _makeConfig(strictMonth=False)
     parser = PollTextParser(config, DEFAULT_SELECTORS)
     builder = PollRecordsBuilder(
         config=config,
@@ -262,8 +262,8 @@ def test_build_poll_records_combines_virtualised_voter_snapshots():
     assert not any(record.voterName.startswith("+44") for record in records)
 
 
-def test_build_poll_records_rejects_incomplete_voter_capture():
-    config = _make_config(strictMonth=False)
+def testBuildPollRecordsRejectsIncompleteVoterCapture():
+    config = _makeConfig(strictMonth=False)
     parser = PollTextParser(config, DEFAULT_SELECTORS)
     builder = PollRecordsBuilder(
         config=config,
@@ -287,8 +287,8 @@ def test_build_poll_records_rejects_incomplete_voter_capture():
         )
 
 
-def test_build_poll_records_from_dialog_prefers_pre_dialog_date():
-    config = _make_config(
+def testBuildPollRecordsFromDialogPrefersPreDialogDate():
+    config = _makeConfig(
         strictMonth=True,
         monthWindow=MonthWindow(
             monthKey="2026-05",
@@ -317,8 +317,8 @@ def test_build_poll_records_from_dialog_prefers_pre_dialog_date():
     assert records[0].sessionDateText == "20260510 19:00"
 
 
-def test_build_poll_records_from_dialog_skips_explicit_future_month_when_strict():
-    config = _make_config(
+def testBuildPollRecordsFromDialogSkipsExplicitFutureMonthWhenStrict():
+    config = _makeConfig(
         strictMonth=True,
         monthWindow=MonthWindow(
             monthKey="2026-05",
@@ -349,8 +349,8 @@ def test_build_poll_records_from_dialog_skips_explicit_future_month_when_strict(
 # ---------------------------------------------------------------------------
 
 
-def test_build_summary_rows_counts_votes():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testBuildSummaryRowsCountsVotes():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
     builder = AttendanceReportBuilder(parser)
 
     records = [
@@ -366,8 +366,8 @@ def test_build_summary_rows_counts_votes():
     assert alice["totalVotes"] == 2
 
 
-def test_build_attendance_report_rows_supports_date_only_session_dates():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testBuildAttendanceReportRowsSupportsDateOnlySessionDates():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
     builder = AttendanceReportBuilder(parser)
 
     rows = builder.buildAttendanceReportRows(
@@ -381,15 +381,15 @@ def test_build_attendance_report_rows_supports_date_only_session_dates():
         ]
     )
 
-    assert rows[0] == ["week", "week 1"]
-    assert rows[1] == ["date", "02/03/26"]
-    assert rows[3] == ["day", "Monday"]
+    assert rows[0] == ["Week", "week 1"]
+    assert rows[1] == ["Date", "02/03/26"]
+    assert rows[3] == ["Day", "Monday"]
     assert rows[5] == ["Alice", "yes"]
-    assert rows[6] == ["session total", "1"]
+    assert rows[6] == ["Session Total", "1"]
 
 
-def test_build_attendance_report_rows_counts_only_yes_votes_in_session_total():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testBuildAttendanceReportRowsCountsOnlyYesVotesInSessionTotal():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
     builder = AttendanceReportBuilder(parser)
 
     rows = builder.buildAttendanceReportRows(
@@ -399,55 +399,55 @@ def test_build_attendance_report_rows_counts_only_yes_votes_in_session_total():
         ]
     )
 
-    assert rows[-1] == ["session total", "1"]
+    assert rows[-1] == ["Session Total", "1"]
 
 
-def test_build_empty_attendance_report_has_all_header_rows():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testBuildEmptyAttendanceReportHasAllHeaderRows():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
     builder = AttendanceReportBuilder(parser)
 
     assert builder.buildAttendanceReportRows([]) == [
-        ["week"],
-        ["date"],
-        ["venue"],
-        ["day"],
-        ["name"],
+        ["Week"],
+        ["Date"],
+        ["Venue"],
+        ["Day"],
+        ["Name"],
     ]
 
 
-def test_write_preview_json_logs_skip_in_dry_run(tmp_path):
-    config = _make_config(outputDir=tmp_path, dryRun=True)
+def testWritePreviewJsonLogsSkipInDryRun(tmp_path):
+    config = _makeConfig(outputDir=tmp_path, dryRun=True)
     exporter = AttendanceExporter(config)
-    preview_path = tmp_path / "exportPreview-2026-03.json"
+    previewPath = tmp_path / "exportPreview-2026-03.json"
 
     exporter.writePreviewJson(
         rawRows=[{"pollTitle": "Training"}], summaryRows=[], reportRows=[]
     )
 
-    assert preview_path.exists() is False
-    assert ("action", ("write preview json: %s", preview_path), {}) not in (
+    assert previewPath.exists() is False
+    assert ("action", ("write preview json: %s", previewPath), {}) not in (
         exporter.logger.messages
     )
     assert (
         "info",
-        ("dry run: skipping preview json write: %s", preview_path),
+        ("dry run: skipping preview json write: %s", previewPath),
         {},
     ) in exporter.logger.messages
 
 
-def test_build_social_media_summary_text_from_attendance_report_rows(tmp_path):
-    config = _make_config(outputDir=tmp_path)
+def testBuildSocialMediaSummaryTextFromAttendanceReportRows(tmp_path):
+    config = _makeConfig(outputDir=tmp_path)
     exporter = AttendanceExporter(config)
 
     reportRows = [
-        ["week", "week 1", ""],
-        ["date", "03/05/26", "05/05/26"],
-        ["venue", "Football Factory", "LLC"],
-        ["day", "Sunday", "Tuesday"],
-        ["name", "19:00", "10:30"],
+        ["Week", "week 1", ""],
+        ["Date", "03/05/26", "05/05/26"],
+        ["Venue", "Football Factory", "LLC"],
+        ["Day", "Sunday", "Tuesday"],
+        ["Name", "19:00", "10:30"],
         ["Al", "yes", ""],
         ["Bob", "no", "yes"],
-        ["session total", "1", "1"],
+        ["Session Total", "1", "1"],
     ]
 
     assert exporter.buildSocialMediaSummaryText(reportRows) == (
@@ -455,8 +455,8 @@ def test_build_social_media_summary_text_from_attendance_report_rows(tmp_path):
     )
 
 
-def test_write_social_media_summary_text_logs_skip_in_dry_run(tmp_path):
-    config = _make_config(outputDir=tmp_path, dryRun=True)
+def testWriteSocialMediaSummaryTextLogsSkipInDryRun(tmp_path):
+    config = _makeConfig(outputDir=tmp_path, dryRun=True)
     exporter = AttendanceExporter(config)
     summaryPath = tmp_path / "socialMediaSummary-2026-03.txt"
 
@@ -470,10 +470,8 @@ def test_write_social_media_summary_text_logs_skip_in_dry_run(tmp_path):
     ) in exporter.logger.messages
 
 
-def test_run_builds_output_from_all_database_records_not_only_scanned_group(
-    tmp_path, monkeypatch
-):
-    config = _make_config(
+def testRunBuildsOutputFromAllDatabaseRecordsNotOnlyScannedGroup(tmp_path, monkeypatch):
+    config = _makeConfig(
         groupName="Selected Group",
         groupNames=("Selected Group",),
         outputDir=tmp_path,
@@ -496,7 +494,9 @@ def test_run_builds_output_from_all_database_records_not_only_scanned_group(
     )
     monkeypatch.setattr(exporter, "writeSummaryRows", lambda _rows: None)
     monkeypatch.setattr(exporter, "writeReportRows", lambda _rows: None)
-    monkeypatch.setattr(exporter, "writeSocialMediaSummaryText", lambda _rows: None)
+    monkeypatch.setattr(
+        exporter, "writeSocialMediaSummaryText", lambda _rows, voterPhones=None: None
+    )
     monkeypatch.setattr(
         exporter,
         "writePreviewJson",
@@ -519,9 +519,9 @@ def test_run_builds_output_from_all_database_records_not_only_scanned_group(
 
 
 class StubItem:
-    def __init__(self, text: str, evaluated_text: str = ""):
+    def __init__(self, text: str, evaluatedText: str = ""):
         self.text = text
-        self.evaluated_text = evaluated_text
+        self.evaluatedText = evaluatedText
 
     def inner_text(self, timeout=None):
         return self.text
@@ -530,7 +530,7 @@ class StubItem:
         raise RuntimeError
 
     def evaluate(self, *_args, **_kwargs):
-        return self.evaluated_text
+        return self.evaluatedText
 
 
 class StubNestedLocator:
@@ -543,13 +543,13 @@ class StubNestedLocator:
 
 
 class StubItemWithLocatorTexts(StubItem):
-    def __init__(self, text: str, locator_texts: dict[str, str]):
+    def __init__(self, text: str, locatorTexts: dict[str, str]):
         super().__init__(text)
-        self.locator_texts = locator_texts
+        self.locatorTexts = locatorTexts
 
     def locator(self, selector, *_args, **_kwargs):
-        if selector in self.locator_texts:
-            return StubNestedLocator(self.locator_texts[selector])
+        if selector in self.locatorTexts:
+            return StubNestedLocator(self.locatorTexts[selector])
         raise RuntimeError
 
 
@@ -583,9 +583,9 @@ class StubPage:
         return self.mapping.get(selector, StubCollection([]))
 
 
-def test_find_poll_cards():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
-    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+def testFindPollCards():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_makeConfig(), DEFAULT_SELECTORS, parser)
 
     page = StubPage(
         {
@@ -604,10 +604,10 @@ class StubDiscoveryWithSharedMessageKey(PollDiscovery):
         return "msg-container"
 
 
-def test_find_poll_cards_keeps_distinct_polls_with_same_message_key():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testFindPollCardsKeepsDistinctPollsWithSameMessageKey():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
     discovery = StubDiscoveryWithSharedMessageKey(
-        _make_config(), DEFAULT_SELECTORS, parser
+        _makeConfig(), DEFAULT_SELECTORS, parser
     )
 
     page = StubPage(
@@ -626,18 +626,21 @@ def test_find_poll_cards_keeps_distinct_polls_with_same_message_key():
     assert len(results) == 2
 
 
-def test_extract_poll_date_text_falls_back_to_dom_date_when_source_only_has_time():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
-    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
-    item = StubItem("Training\n10:30\nYes")
-    item.evaluate = lambda *_args, **_kwargs: "01/03/2026"
+def testExtractPollDateTextPrefersPreviousSiblingDateOverVisibleCandidate():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_makeConfig(), DEFAULT_SELECTORS, parser)
+    item = StubItem("Sunday 7pm football factory\n12:18\nView votes")
+    item.evaluate = lambda *_args, **_kwargs: {
+        "visibleDateHeaders": ["09/05/2026"],
+        "previousSiblingDates": ["06/05/2026"],
+    }
 
-    assert discovery.extractPollDateText(item, item.text) == "01/03/2026"
+    assert discovery.extractPollDateText(item, item.text) == "06/05/2026"
 
 
-def test_extract_poll_date_text_can_skip_dom_fallback():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
-    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+def testExtractPollDateTextCanSkipDomFallback():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_makeConfig(), DEFAULT_SELECTORS, parser)
     item = StubItem("Training\n10:30\nYes")
     item.evaluate = lambda *_args, **_kwargs: "01/03/2026"
 
@@ -645,21 +648,9 @@ def test_extract_poll_date_text_can_skip_dom_fallback():
     assert discovery.extractPollDateText(item, item.text, allowDomFallback=False) == ""
 
 
-def test_extract_poll_date_text_prefers_visible_header_over_previous_sibling_date():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
-    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
-    item = StubItem("Sunday 7pm football factory\n12:18\nView votes")
-    item.evaluate = lambda *_args, **_kwargs: {
-        "visibleDateHeaders": ["09/05/2026"],
-        "previousSiblingDates": ["06/05/2026"],
-    }
-
-    assert discovery.extractPollDateText(item, item.text) == "09/05/2026"
-
-
-def test_extract_poll_date_text_uses_previous_sibling_date_as_legacy_fallback():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
-    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+def testExtractPollDateTextUsesPreviousSiblingDateAsLegacyFallback():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_makeConfig(), DEFAULT_SELECTORS, parser)
     item = StubItem("Tuesday 10.30am LLC\n08:39\nView votes")
     item.evaluate = lambda *_args, **_kwargs: {
         "visibleDateHeaders": [],
@@ -669,9 +660,32 @@ def test_extract_poll_date_text_uses_previous_sibling_date_as_legacy_fallback():
     assert discovery.extractPollDateText(item, item.text) == "11/05/2026"
 
 
-def test_extract_poll_date_text_reads_short_year_date_from_source_text():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
-    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+def testExtractPollDateTextUsesChatStartDateHeader():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_makeConfig(), DEFAULT_SELECTORS, parser)
+    item = StubItem("Sunday 7pm Football Factory\nView votes")
+    item.evaluate = lambda *_args, **_kwargs: {
+        "visibleDateHeaders": [],
+        "chatDateHeaders": ["24/07/2026"],
+        "attributedDates": [],
+        "previousSiblingDates": [],
+    }
+
+    rawDateText = discovery.extractPollDateText(item, item.text)
+
+    assert rawDateText == "24/07/2026"
+    assert (
+        parser.calculateSessionDateText(
+            pollTitle="Sunday 7pm Football Factory",
+            pollDateText=parser.normaliseDateText(rawDateText),
+        )
+        == "20260726 19:00"
+    )
+
+
+def testExtractPollDateTextReadsShortYearDateFromSourceText():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_makeConfig(), DEFAULT_SELECTORS, parser)
 
     assert (
         discovery.extractPollDateText(None, "Posted 1/5/26\nSession Sunday 7pm")
@@ -680,7 +694,7 @@ def test_extract_poll_date_text_reads_short_year_date_from_source_text():
     assert parser.normaliseDateText("1/5/26") == "20260501"
 
 
-def test_extract_poll_date_text_reads_weekday_date_from_source_text(monkeypatch):
+def testExtractPollDateTextReadsWeekdayDateFromSourceText(monkeypatch):
     class FixedDateTime(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -688,8 +702,8 @@ def test_extract_poll_date_text_reads_weekday_date_from_source_text(monkeypatch)
 
     monkeypatch.setattr("whatsapp.parsing.datetime", FixedDateTime)
 
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
-    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_makeConfig(), DEFAULT_SELECTORS, parser)
 
     assert discovery.extractPollDateText(None, "Posted Friday\nSession Sunday 7pm") == (
         "Friday"
@@ -697,9 +711,9 @@ def test_extract_poll_date_text_reads_weekday_date_from_source_text(monkeypatch)
     assert parser.normaliseDateText("Friday") == "20260529"
 
 
-def test_extract_poll_source_text_prefers_message_container_over_view_votes_label():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
-    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+def testExtractPollSourceTextPrefersMessageContainerOverViewVotesLabel():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_makeConfig(), DEFAULT_SELECTORS, parser)
     item = StubItemWithLocatorTexts(
         "View votes",
         {
@@ -716,12 +730,12 @@ def test_extract_poll_source_text_prefers_message_container_over_view_votes_labe
     )
 
 
-def test_extract_poll_source_text_falls_back_to_dom_debug_text():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
-    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+def testExtractPollSourceTextFallsBackToDomDebugText():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_makeConfig(), DEFAULT_SELECTORS, parser)
     item = StubItem(
         "View votes",
-        evaluated_text="Posted 1/5/26\nSession Sunday 7pm 3/5/26\nView votes",
+        evaluatedText="Posted 1/5/26\nSession Sunday 7pm 3/5/26\nView votes",
     )
 
     assert (
@@ -730,14 +744,14 @@ def test_extract_poll_source_text_falls_back_to_dom_debug_text():
     )
 
 
-def test_find_poll_cards_logs_dom_debug_text_for_skipped_candidate():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
-    discovery = PollDiscovery(_make_config(), DEFAULT_SELECTORS, parser)
+def testFindPollCardsLogsDomDebugTextForSkippedCandidate():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
+    discovery = PollDiscovery(_makeConfig(), DEFAULT_SELECTORS, parser)
 
     page = StubPage(
         {
             'div[role="button"]:has-text("View votes")': StubItemCollection(
-                [StubItem("View votes", evaluated_text="aria-label only poll")]
+                [StubItem("View votes", evaluatedText="aria-label only poll")]
             ),
         }
     )
@@ -745,7 +759,7 @@ def test_find_poll_cards_logs_dom_debug_text_for_skipped_candidate():
     results = discovery.findPollCards(page)
 
     assert results == []
-    assert discovery.logger.has_call(
+    assert discovery.logger.hasCall(
         "info",
         "skipping poll candidate missing usable source text: %s",
         "aria-label only poll",
@@ -753,8 +767,8 @@ def test_find_poll_cards_logs_dom_debug_text_for_skipped_candidate():
 
 
 class StubDiscoveryWithVisiblePollDates:
-    def __init__(self, raw_dates_by_locator):
-        self.raw_dates_by_locator = raw_dates_by_locator
+    def __init__(self, rawDatesByLocator):
+        self.rawDatesByLocator = rawDatesByLocator
 
     def extractPollSourceText(self, locator):
         return str(locator)
@@ -762,7 +776,7 @@ class StubDiscoveryWithVisiblePollDates:
     def extractPollDateText(
         self, locator, sourceText: str, allowDomFallback: bool = True
     ) -> str:
-        return self.raw_dates_by_locator[sourceText]
+        return self.rawDatesByLocator[sourceText]
 
 
 class StubDiscoveryWithOnlyDomFallbackDates(StubDiscoveryWithVisiblePollDates):
@@ -771,21 +785,21 @@ class StubDiscoveryWithOnlyDomFallbackDates(StubDiscoveryWithVisiblePollDates):
     ) -> str:
         if not allowDomFallback:
             return ""
-        return self.raw_dates_by_locator[sourceText]
+        return self.rawDatesByLocator[sourceText]
 
 
 class StubDiscoveryWithSourceTextAndDates:
-    def __init__(self, source_text_by_locator, raw_dates_by_locator):
-        self.source_text_by_locator = source_text_by_locator
-        self.raw_dates_by_locator = raw_dates_by_locator
+    def __init__(self, sourceTextByLocator, rawDatesByLocator):
+        self.sourceTextByLocator = sourceTextByLocator
+        self.rawDatesByLocator = rawDatesByLocator
 
     def extractPollSourceText(self, locator):
-        return self.source_text_by_locator[locator]
+        return self.sourceTextByLocator[locator]
 
     def extractPollDateText(
         self, locator, sourceText: str, allowDomFallback: bool = True
     ) -> str:
-        return self.raw_dates_by_locator[locator]
+        return self.rawDatesByLocator[locator]
 
     def extractMessageKey(self, locator) -> str:
         return str(locator)
@@ -808,8 +822,8 @@ class StubDiscoveryWithSourceTexts:
         return f"{messageKey}|{sourceText}"
 
 
-def test_should_stop_for_strict_lookback_with_all_polls_before_cutoff():
-    config = _make_config(
+def testShouldStopForStrictLookbackWithAllPollsBeforeCutoff():
+    config = _makeConfig(
         strictMonth=True,
         monthWindow=MonthWindow(
             monthKey="2026-05",
@@ -833,8 +847,8 @@ def test_should_stop_for_strict_lookback_with_all_polls_before_cutoff():
     assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is True
 
 
-def test_should_not_stop_for_strict_lookback_when_oldest_visible_poll_is_at_cutoff():
-    config = _make_config(
+def testShouldNotStopForStrictLookbackWhenOldestVisiblePollIsAtCutoff():
+    config = _makeConfig(
         strictMonth=True,
         monthWindow=MonthWindow(
             monthKey="2026-05",
@@ -858,8 +872,8 @@ def test_should_not_stop_for_strict_lookback_when_oldest_visible_poll_is_at_cuto
     assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is False
 
 
-def test_should_stop_for_strict_lookback_when_older_poll_is_visible_with_newer_loaded_poll():
-    config = _make_config(
+def testShouldStopForStrictLookbackWhenOlderPollIsVisibleWithNewerLoadedPoll():
+    config = _makeConfig(
         strictMonth=True,
         monthWindow=MonthWindow(
             monthKey="2026-05",
@@ -883,8 +897,8 @@ def test_should_stop_for_strict_lookback_when_older_poll_is_visible_with_newer_l
     assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is True
 
 
-def test_should_not_stop_for_strict_lookback_when_only_dom_fallback_dates_exist():
-    config = _make_config(
+def testShouldNotStopForStrictLookbackWhenOnlyDomFallbackDatesExist():
+    config = _makeConfig(
         strictMonth=True,
         monthWindow=MonthWindow(
             monthKey="2026-05",
@@ -908,8 +922,8 @@ def test_should_not_stop_for_strict_lookback_when_only_dom_fallback_dates_exist(
     assert scraper.shouldStopForStrictLookback(["poll-a", "poll-b"]) is False
 
 
-def test_scrape_poll_locator_marks_stop_when_session_date_is_before_month_window():
-    config = _make_config(
+def testScrapePollLocatorMarksStopWhenSessionDateIsBeforeMonthWindow():
+    config = _makeConfig(
         strictMonth=True,
         monthWindow=MonthWindow(
             monthKey="2026-05",
@@ -924,10 +938,10 @@ def test_scrape_poll_locator_marks_stop_when_session_date_is_before_month_window
         parser=parser,
     )
     scraper.discovery = StubDiscoveryWithSourceTextAndDates(
-        source_text_by_locator={
+        sourceTextByLocator={
             "poll-a": "Posted 24/04/2026\nTuesday 7pm\nSelect one or more\nView votes",
         },
-        raw_dates_by_locator={"poll-a": "24/04/2026"},
+        rawDatesByLocator={"poll-a": "24/04/2026"},
     )
 
     result = scraper.scrapePollLocator(
@@ -942,8 +956,8 @@ def test_scrape_poll_locator_marks_stop_when_session_date_is_before_month_window
     assert scraper.stopAfterCurrentPass is True
 
 
-def test_scrape_poll_locator_does_not_mark_stop_for_session_inside_month_window():
-    config = _make_config(
+def testScrapePollLocatorDoesNotMarkStopForSessionInsideMonthWindow():
+    config = _makeConfig(
         strictMonth=True,
         monthWindow=MonthWindow(
             monthKey="2026-05",
@@ -958,10 +972,10 @@ def test_scrape_poll_locator_does_not_mark_stop_for_session_inside_month_window(
         parser=parser,
     )
     scraper.discovery = StubDiscoveryWithSourceTextAndDates(
-        source_text_by_locator={
-            "poll-a": "Posted 28/04/2026\nMonday 7pm\nSelect one or more\nView votes",
+        sourceTextByLocator={
+            "poll-a": "Posted 28/05/2026\nMonday 7pm\nSelect one or more\nView votes",
         },
-        raw_dates_by_locator={"poll-a": "28/04/2026"},
+        rawDatesByLocator={"poll-a": "28/05/2026"},
     )
 
     scraper.dialog = PollDialog(config=config, selectors=DEFAULT_SELECTORS)
@@ -977,10 +991,10 @@ def test_scrape_poll_locator_does_not_mark_stop_for_session_inside_month_window(
     assert scraper.stopAfterCurrentPass is False
 
 
-def test_log_visible_poll_candidates_logs_each_new_poll_once():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testLogVisiblePollCandidatesLogsEachNewPollOnce():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
     scraper = WhatsAppPollScraper(
-        config=_make_config(),
+        config=_makeConfig(),
         selectors=DEFAULT_SELECTORS,
         parser=parser,
     )
@@ -993,14 +1007,14 @@ def test_log_visible_poll_candidates_logs_each_new_poll_once():
 
     scraper.logVisiblePollCandidates(["poll-a", "poll-b"], set())
 
-    assert scraper.logger.has_call("debug", "found poll: %s", "Monday 7pm LLC")
-    assert scraper.logger.has_call("debug", "found poll: %s", "Wednesday 8pm LLC")
+    assert scraper.logger.hasCall("debug", "found poll: %s", "Monday 7pm LLC")
+    assert scraper.logger.hasCall("debug", "found poll: %s", "Wednesday 8pm LLC")
 
 
-def test_log_visible_poll_candidates_skips_polls_seen_in_previous_passes():
-    parser = PollTextParser(_make_config(), DEFAULT_SELECTORS)
+def testLogVisiblePollCandidatesSkipsPollsSeenInPreviousPasses():
+    parser = PollTextParser(_makeConfig(), DEFAULT_SELECTORS)
     scraper = WhatsAppPollScraper(
-        config=_make_config(),
+        config=_makeConfig(),
         selectors=DEFAULT_SELECTORS,
         parser=parser,
     )
@@ -1036,14 +1050,14 @@ def test_log_visible_poll_candidates_skips_polls_seen_in_previous_passes():
     assert afterWednesdayCount == beforeWednesdayCount + 1
 
 
-def test_build_scraped_poll_key_uses_normalized_title_and_date():
-    parser = PollTextParser(_make_config(strictMonth=True), DEFAULT_SELECTORS)
+def testBuildScrapedPollKeyUsesNormalizedTitleAndDate():
+    parser = PollTextParser(_makeConfig(strictMonth=True), DEFAULT_SELECTORS)
     scraper = WhatsAppPollScraper(
-        config=_make_config(strictMonth=True),
+        config=_makeConfig(strictMonth=True),
         selectors=DEFAULT_SELECTORS,
         parser=parser,
     )
-    poll_record = PollRecord(
+    pollRecord = PollRecord(
         pollTitle="Tuesday 10.30am LLC",
         pollDateText="20260504",
         sessionDateText="20260505 10:30",
@@ -1051,28 +1065,28 @@ def test_build_scraped_poll_key_uses_normalized_title_and_date():
         voterName="Alice",
         sourceHint="",
     )
-    source_text = (
+    sourceText = (
         "Tuesday 10.30am LLC\nSelect one or more\nYes\n18\nNo\n14\n08:39\nView votes"
     )
 
-    poll_key = scraper.buildScrapedPollKey(
-        sourceText=source_text,
-        pollRecord=poll_record,
+    pollKey = scraper.buildScrapedPollKey(
+        sourceText=sourceText,
+        pollRecord=pollRecord,
         fallbackPollKey="fallback-key",
     )
 
-    assert poll_key == "20260505|tuesday 10.30am llc"
+    assert pollKey == "20260505|tuesday 10.30am llc"
 
 
-def test_build_poll_key_for_locator_uses_dom_header_date():
-    parser = PollTextParser(_make_config(strictMonth=True), DEFAULT_SELECTORS)
+def testBuildPollKeyForLocatorUsesDomHeaderDate():
+    parser = PollTextParser(_makeConfig(strictMonth=True), DEFAULT_SELECTORS)
     scraper = WhatsAppPollScraper(
-        config=_make_config(strictMonth=True),
+        config=_makeConfig(strictMonth=True),
         selectors=DEFAULT_SELECTORS,
         parser=parser,
     )
 
-    poll_key, poll_title, poll_date_text = scraper.buildPollKeyForLocator(
+    pollKey, pollTitle, pollDateText = scraper.buildPollKeyForLocator(
         sourceText=(
             "Wednesday 11am Football Factory\n"
             "Select one or more\n"
@@ -1087,17 +1101,17 @@ def test_build_poll_key_for_locator_uses_dom_header_date():
         rawDateText="Tuesday",
     )
 
-    assert poll_title == "Wednesday 11am Football Factory"
-    assert poll_date_text
-    assert poll_key == parser.buildPollKeyFromParts(
-        pollTitle=poll_title,
-        pollDateText=poll_date_text,
+    assert pollTitle == "Wednesday 11am Football Factory"
+    assert pollDateText
+    assert pollKey == parser.buildPollKeyFromParts(
+        pollTitle=pollTitle,
+        pollDateText=pollDateText,
         sourceHint="",
     )
 
 
-def test_group_poll_key_includes_group_name():
-    config = _make_config(groupName="Group One", groupNames=("Group One",))
+def testGroupPollKeyIncludesGroupName():
+    config = _makeConfig(groupName="Group One", groupNames=("Group One",))
     parser = PollTextParser(config, DEFAULT_SELECTORS)
     scraper = WhatsAppPollScraper(
         config=config,
@@ -1108,8 +1122,8 @@ def test_group_poll_key_includes_group_name():
     assert scraper.buildGroupPollKey("Group One", "poll-1") == "group one|poll-1"
 
 
-def test_build_poll_records_from_dialog_keeps_short_year_source_dates_when_strict():
-    config = _make_config(
+def testBuildPollRecordsFromDialogKeepsShortYearSourceDatesWhenStrict():
+    config = _makeConfig(
         strictMonth=True,
         monthWindow=MonthWindow(
             monthKey="2026-05",
@@ -1137,7 +1151,7 @@ def test_build_poll_records_from_dialog_keeps_short_year_source_dates_when_stric
     assert records[0].sessionDateText == "20260503 19:00"
 
 
-def test_build_poll_records_from_dialog_keeps_weekday_source_dates_when_strict(
+def testBuildPollRecordsFromDialogKeepsWeekdaySourceDatesWhenStrict(
     monkeypatch,
 ):
     class FixedDateTime(datetime):
@@ -1147,7 +1161,7 @@ def test_build_poll_records_from_dialog_keeps_weekday_source_dates_when_strict(
 
     monkeypatch.setattr("whatsapp.parsing.datetime", FixedDateTime)
 
-    config = _make_config(
+    config = _makeConfig(
         strictMonth=True,
         monthWindow=MonthWindow(
             monthKey="2026-05",
@@ -1209,8 +1223,161 @@ class FakePage:
         self.pressed.append(key)
 
 
-def test_close_dialog_uses_close_button():
-    dialog = PollDialog(_make_config(), DEFAULT_SELECTORS)
+class FakeEmptyCollection:
+    def count(self):
+        return 0
+
+
+class FakeDialogMouse:
+    def wheel(self, *_args):
+        pass
+
+
+class FakeVirtualDialogPage:
+    def __init__(self):
+        self.mouse = FakeDialogMouse()
+
+    def wait_for_timeout(self, *_args):
+        pass
+
+
+class FakeVirtualDialogPanel:
+    def __init__(self, snapshots):
+        self.snapshots = snapshots
+        self.snapshotIndex = 0
+        self.page = FakeVirtualDialogPage()
+
+    def evaluate(self, *_args):
+        if self.snapshotIndex < len(self.snapshots) - 1:
+            self.snapshotIndex += 1
+            return {"moved": True, "atEnd": False, "count": 2}
+        return {"moved": False, "atEnd": True, "count": 2}
+
+    def get_by_text(self, *_args, **_kwargs):
+        return FakeEmptyCollection()
+
+    def hover(self):
+        pass
+
+    def inner_text(self, timeout=None):
+        return self.snapshots[self.snapshotIndex]
+
+
+class FakeExpandControl:
+    def __init__(self, panel):
+        self.panel = panel
+
+    def click(self, timeout=None, force=False):
+        self.panel.snapshotIndex = 1
+
+    def evaluate(self, *_args):
+        return "Yes"
+
+    def is_visible(self, timeout=None):
+        return True
+
+    def scroll_into_view_if_needed(self, timeout=None):
+        pass
+
+    def evaluate(self, *_args):
+        return "Yes"
+
+
+class FakeExpandCollection:
+    def __init__(self, panel):
+        self.panel = panel
+
+    def count(self):
+        return 1 if self.panel.snapshotIndex == 0 else 0
+
+    def nth(self, index):
+        assert index == 0
+        return FakeExpandControl(self.panel)
+
+
+class FakeSeeAllDialogPanel(FakeVirtualDialogPanel):
+    def evaluate(self, *_args):
+        return {"moved": False, "atEnd": True, "count": 0, "results": []}
+
+    def get_by_text(self, *_args, **_kwargs):
+        return FakeExpandCollection(self)
+
+
+class FakeSequentialExpandControl(FakeExpandControl):
+    def click(self, timeout=None, force=False):
+        self.panel.snapshotIndex += 1
+        self.panel.clickCount += 1
+
+
+class FakeSequentialExpandCollection(FakeExpandCollection):
+    def count(self):
+        return int(self.panel.snapshotIndex < len(self.panel.snapshots) - 1)
+
+    def nth(self, index):
+        assert index == 0
+        return FakeSequentialExpandControl(self.panel)
+
+
+class FakeSequentialSeeAllDialogPanel(FakeSeeAllDialogPanel):
+    def __init__(self, snapshots):
+        super().__init__(snapshots)
+        self.clickCount = 0
+
+    def get_by_text(self, *_args, **_kwargs):
+        return FakeSequentialExpandCollection(self)
+
+
+def testExpandAllVotersCollectsEachVirtualisedSnapshot():
+    dialog = PollDialog(_makeConfig(), DEFAULT_SELECTORS)
+    snapshots = [
+        "Sunday 2pm Football Factory\nYes\nAlex\nBlair\nCasey\nNo",
+        "Sunday 2pm Football Factory\nYes\nDevon\nElliot\nFrankie\nNo",
+        "Sunday 2pm Football Factory\nYes\nGray\nHarper\nNo",
+    ]
+    panel = FakeVirtualDialogPanel(snapshots)
+
+    captured = dialog.expandAllVoters(panel, initialText=snapshots[0])
+
+    assert captured == snapshots
+
+
+def testExpandAllVotersClicksExactSeeAllMoreControl():
+    dialog = PollDialog(_makeConfig(), DEFAULT_SELECTORS)
+    snapshots = [
+        "Sunday 2pm Football Factory\nYes\nAlex\nBlair\nCasey\nDevon\nElliot\nNo",
+        "Sunday 2pm Football Factory\nYes\nAlex\nBlair\nCasey\nDevon\nElliot\nFrankie\nGray\nHarper\nNo",
+    ]
+    panel = FakeSeeAllDialogPanel(snapshots)
+
+    captured = dialog.expandAllVoters(panel, initialText=snapshots[0])
+
+    assert captured == snapshots
+
+
+def testExpandAllVotersRechecksControlsAfterPanelReplacement():
+    dialog = PollDialog(_makeConfig(), DEFAULT_SELECTORS)
+    snapshots = [
+        "Thursday 8pm LLC\nYes\nAlex\nBlair\nCasey\nDevon\nElliot\nNo\nMina",
+        "Thursday 8pm LLC\nYes\nAlex\nBlair\nCasey\nDevon\nElliot\nNo\nMina\nNoel",
+        "Thursday 8pm LLC\nYes\nAlex\nBlair\nCasey\nDevon\nElliot\nFrankie\nGray\nHarper\nNo\nMina\nNoel",
+    ]
+    panel = FakeSequentialSeeAllDialogPanel(snapshots)
+
+    captured = dialog.expandAllVoters(panel, initialText=snapshots[0])
+
+    assert panel.clickCount == 2
+    assert captured == [snapshots[0], snapshots[2]]
+
+
+def testExpandedVoterSnapshotRestoresMissingOptionHeading():
+    dialog = PollDialog(_makeConfig(), DEFAULT_SELECTORS)
+
+    assert dialog.labelExpandedSnapshot("Alice\nBob", "Yes") == "Yes\nAlice\nBob"
+    assert dialog.labelExpandedSnapshot("Yes\nAlice\nBob", "Yes") == ("Yes\nAlice\nBob")
+
+
+def testCloseDialogUsesCloseButton():
+    dialog = PollDialog(_makeConfig(), DEFAULT_SELECTORS)
     control = FakeControl(True)
     page = FakePage({'button[aria-label="Close"]': control})
 
@@ -1218,8 +1385,8 @@ def test_close_dialog_uses_close_button():
     assert control.clicked is True
 
 
-def test_close_dialog_falls_back_to_escape():
-    dialog = PollDialog(_make_config(), DEFAULT_SELECTORS)
+def testCloseDialogFallsBackToEscape():
+    dialog = PollDialog(_makeConfig(), DEFAULT_SELECTORS)
     page = FakePage({})
 
     dialog.closeDialog(page, None)
@@ -1240,15 +1407,15 @@ class FakeMouse:
 
 
 class FakeNavigationPage:
-    def __init__(self, evaluate_result):
-        self.evaluate_result = evaluate_result
+    def __init__(self, evaluateResult):
+        self.evaluateResult = evaluateResult
         self.mouse = FakeMouse()
 
     def get_by_text(self, *_args, **_kwargs):
         return FakeControl(False)
 
     def evaluate(self, *_args, **_kwargs):
-        return self.evaluate_result
+        return self.evaluateResult
 
     def wait_for_timeout(self, *_args):
         pass
@@ -1263,9 +1430,9 @@ class FakeKeyboard:
 
 
 class FakeSearchControl:
-    def __init__(self, *, visible=True, fail_clicks=0):
+    def __init__(self, *, visible=True, failClicks=0):
         self.visible = visible
-        self.fail_clicks = fail_clicks
+        self.failClicks = failClicks
         self.first = self
         self.clicked = 0
         self.filled = []
@@ -1276,7 +1443,7 @@ class FakeSearchControl:
 
     def click(self, timeout=None):
         self.clicked += 1
-        if self.clicked <= self.fail_clicks:
+        if self.clicked <= self.failClicks:
             raise TimeoutError("not clickable yet")
 
     def fill(self, value):
@@ -1295,31 +1462,68 @@ class FakeMissingSearchControl(FakeControl):
 
 
 class FakeTextMatch:
-    def __init__(self):
+    def __init__(self, visible=True):
         self.first = self
         self.clicked = False
+        self.visible = visible
+
+    def count(self):
+        return 1
+
+    def nth(self, index):
+        assert index == 0
+        return self
+
+    def is_visible(self, timeout=None):
+        return self.visible
 
     def click(self, timeout=None):
         self.clicked = True
 
 
 class FakeMissingTextMatch(FakeTextMatch):
+    def __init__(self):
+        super().__init__(visible=False)
+
     def click(self, timeout=None):
         raise TimeoutError("missing group")
+
+
+class FakeTextMatches:
+    def __init__(self, matches):
+        self.matches = matches
+
+    def count(self):
+        return len(self.matches)
+
+    def nth(self, index):
+        return self.matches[index]
+
+
+class FakeDelayedTextMatches(FakeTextMatches):
+    def __init__(self, matches, emptyCounts=1):
+        super().__init__(matches)
+        self.emptyCounts = emptyCounts
+
+    def count(self):
+        if self.emptyCounts:
+            self.emptyCounts -= 1
+            return 0
+        return super().count()
 
 
 class FakeOpenGroupPage:
     def __init__(self, mapping):
         self.mapping = mapping
         self.keyboard = FakeKeyboard()
-        self.text_match = FakeTextMatch()
+        self.textMatch = FakeTextMatch()
         self.waits = []
 
     def locator(self, selector):
         return self.mapping.get(selector, FakeMissingSearchControl())
 
     def get_by_text(self, *_args, **_kwargs):
-        return self.text_match
+        return self.textMatch
 
     def wait_for_timeout(self, value):
         self.waits.append(value)
@@ -1328,32 +1532,32 @@ class FakeOpenGroupPage:
 class FakeReadyPage:
     def __init__(self, mapping):
         self.mapping = mapping
-        self.loaded_states = []
+        self.loadedStates = []
 
     def wait_for_load_state(self, state):
-        self.loaded_states.append(state)
+        self.loadedStates.append(state)
 
     def locator(self, selector):
         return self.mapping.get(selector, FakeControl(False))
 
 
-def test_wait_for_whatsapp_ready_uses_ready_indicators():
-    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
-    chat_list = FakeControl(True)
-    page = FakeReadyPage({"#pane-side": chat_list})
+def testWaitForWhatsappReadyUsesReadyIndicators():
+    navigation = WhatsAppNavigation(_makeConfig(), DEFAULT_SELECTORS)
+    chatList = FakeControl(True)
+    page = FakeReadyPage({"#pane-side": chatList})
 
     navigation.waitForWhatsAppReady(page)
 
-    assert page.loaded_states == ["domcontentloaded"]
+    assert page.loadedStates == ["domcontentloaded"]
 
 
-def test_open_group_retries_search_after_reopening_search():
-    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
-    search_box = FakeSearchControl(fail_clicks=2)
+def testOpenGroupRetriesSearchAfterReopeningSearch():
+    navigation = WhatsAppNavigation(_makeConfig(), DEFAULT_SELECTORS)
+    searchBox = FakeSearchControl(failClicks=2)
     activator = FakeSearchControl()
     page = FakeOpenGroupPage(
         {
-            '[aria-label="Search or start a new chat"]': search_box,
+            '[aria-label="Search or start a new chat"]': searchBox,
             'button[aria-label="Search"]': activator,
         }
     )
@@ -1361,15 +1565,70 @@ def test_open_group_retries_search_after_reopening_search():
     navigation.openGroup(page, "Second Group")
 
     assert page.keyboard.pressed == ["Escape", "Escape"]
-    assert search_box.typed == ["Second Group"]
-    assert page.text_match.clicked is True
+    assert searchBox.typed == ["Second Group"]
+    assert page.textMatch.clicked is True
 
 
-def test_open_group_reports_missing_exact_group_name():
-    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
-    search_box = FakeSearchControl()
-    page = FakeOpenGroupPage({'[aria-label="Search or start a new chat"]': search_box})
-    page.text_match = FakeMissingTextMatch()
+def testOpenGroupSkipsHiddenExactTextMatch():
+    navigation = WhatsAppNavigation(_makeConfig(), DEFAULT_SELECTORS)
+    searchBox = FakeSearchControl()
+    hiddenMatch = FakeTextMatch(visible=False)
+    visibleMatch = FakeTextMatch()
+    page = FakeOpenGroupPage({'[aria-label="Search or start a new chat"]': searchBox})
+    page.textMatch = FakeTextMatches([hiddenMatch, visibleMatch])
+
+    navigation.openGroup(page, "HWFC Information")
+
+    assert hiddenMatch.clicked is False
+    assert visibleMatch.clicked is True
+
+
+def testOpenGroupWaitsForAsyncSearchResults():
+    navigation = WhatsAppNavigation(_makeConfig(), DEFAULT_SELECTORS)
+    searchBox = FakeSearchControl()
+    visibleMatch = FakeTextMatch()
+    page = FakeOpenGroupPage({'[aria-label="Search or start a new chat"]': searchBox})
+    page.textMatch = FakeDelayedTextMatches([visibleMatch])
+
+    navigation.openGroup(page, "HWFC Information")
+
+    assert visibleMatch.clicked is True
+    assert 750 in page.waits
+
+
+def testOpenGroupUsesChatListSearchNotInChatSearch():
+    navigation = WhatsAppNavigation(_makeConfig(), DEFAULT_SELECTORS)
+    chatListSearch = FakeSearchControl()
+    inChatSearch = FakeSearchControl()
+    page = FakeOpenGroupPage(
+        {
+            '#side [aria-label="Search or start a new chat"]': chatListSearch,
+            '[placeholder="Search"]': inChatSearch,
+        }
+    )
+
+    navigation.openGroup(page, "HWFC Information")
+
+    assert chatListSearch.typed == ["HWFC Information"]
+    assert inChatSearch.typed == []
+
+
+def testOpenGroupReplacesExistingChatListSearchQuery():
+    navigation = WhatsAppNavigation(_makeConfig(), DEFAULT_SELECTORS)
+    activeSearch = FakeSearchControl()
+    page = FakeOpenGroupPage({'#side input[placeholder="Search"]': activeSearch})
+
+    navigation.openGroup(page, "HWFC Information")
+
+    assert activeSearch.filled == [""]
+    assert activeSearch.typed == ["HWFC Information"]
+
+
+def testOpenGroupReportsMissingExactGroupName():
+    navigation = WhatsAppNavigation(_makeConfig(), DEFAULT_SELECTORS)
+    searchBox = FakeSearchControl()
+    page = FakeOpenGroupPage({'[aria-label="Search or start a new chat"]': searchBox})
+    page.textMatch = FakeMissingTextMatch()
 
     try:
         navigation.openGroup(page, "Missing Group")
@@ -1379,8 +1638,8 @@ def test_open_group_reports_missing_exact_group_name():
         raise AssertionError("expected GroupNotFoundError")
 
 
-def test_scroll_chat_to_latest_skips_mouse_wheel_when_preferred_panel_scrolls():
-    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+def testScrollChatToLatestSkipsMouseWheelWhenPreferredPanelScrolls():
+    navigation = WhatsAppNavigation(_makeConfig(), DEFAULT_SELECTORS)
     page = FakeNavigationPage(
         {
             "didScroll": True,
@@ -1394,8 +1653,8 @@ def test_scroll_chat_to_latest_skips_mouse_wheel_when_preferred_panel_scrolls():
     assert page.mouse.wheels == []
 
 
-def test_scroll_chat_to_latest_falls_back_to_mouse_wheel_without_preferred_panel():
-    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+def testScrollChatToLatestFallsBackToMouseWheelWithoutPreferredPanel():
+    navigation = WhatsAppNavigation(_makeConfig(), DEFAULT_SELECTORS)
     page = FakeNavigationPage(
         {
             "didScroll": False,
@@ -1409,8 +1668,8 @@ def test_scroll_chat_to_latest_falls_back_to_mouse_wheel_without_preferred_panel
     assert page.mouse.wheels == [(0, 2500)]
 
 
-def test_scroll_chat_history_skips_mouse_wheel_when_preferred_panel_scrolls():
-    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+def testScrollChatHistorySkipsMouseWheelWhenPreferredPanelScrolls():
+    navigation = WhatsAppNavigation(_makeConfig(), DEFAULT_SELECTORS)
     page = FakeNavigationPage(
         {
             "didScroll": True,
@@ -1419,13 +1678,14 @@ def test_scroll_chat_history_skips_mouse_wheel_when_preferred_panel_scrolls():
         }
     )
 
-    navigation.scrollChatHistory(page)
+    madeProgress = navigation.scrollChatHistory(page)
 
     assert page.mouse.wheels == []
+    assert madeProgress is True
 
 
-def test_scroll_chat_history_falls_back_to_mouse_wheel_without_preferred_scroll():
-    navigation = WhatsAppNavigation(_make_config(), DEFAULT_SELECTORS)
+def testScrollChatHistoryFallsBackToMouseWheelWithoutPreferredScroll():
+    navigation = WhatsAppNavigation(_makeConfig(), DEFAULT_SELECTORS)
     page = FakeNavigationPage(
         {
             "didScroll": False,
@@ -1434,6 +1694,7 @@ def test_scroll_chat_history_falls_back_to_mouse_wheel_without_preferred_scroll(
         }
     )
 
-    navigation.scrollChatHistory(page)
+    madeProgress = navigation.scrollChatHistory(page)
 
     assert page.mouse.wheels == [(0, -2500)]
+    assert madeProgress is False

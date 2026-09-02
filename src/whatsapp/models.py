@@ -20,6 +20,7 @@ class PollRecord:
     voterName: str
     sourceHint: str
     sessionStatus: SessionStatus = SessionStatus.SCHEDULED
+    voterPhone: str = ""
 
 
 @dataclass(frozen=True)

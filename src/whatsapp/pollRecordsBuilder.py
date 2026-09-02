@@ -6,6 +6,7 @@ import re
 from attendanceConfig import RuntimeConfig
 from organiseMyProjects.logUtils import drawBox, getLogger  # type: ignore[import]
 from whatsapp.models import PollRecord, SessionStatus
+from whatsapp.names import stripContactNameMarker
 from whatsapp.parsing import PollTextParser
 from whatsapp.pollDiscovery import PollDiscovery
 from whatsapp.selectors import WhatsAppSelectors
@@ -30,6 +31,7 @@ class PollRecordsBuilder:
         self.parser = parser
         self.discovery = discovery
         self.logger = logger
+        self.voterPhones: dict[str, str] = {}
 
     ## public api
 
@@ -41,6 +43,7 @@ class PollRecordsBuilder:
         sourceText: str,
         rawDateText: str = "",
         dialogTexts: list[str] | None = None,
+        cancelledByReaction: bool = False,
     ) -> list[PollRecord]:
         pollTitle = self.parser.extractPollTitleFromDialog(dialogText) or (
             self.parser.extractPollTitle(dialog, sourceText=sourceText)
@@ -61,7 +64,9 @@ class PollRecordsBuilder:
             pollDateText=pollDateText,
         )
         sessionDateDisplay = self._formatDateDisplay(sessionDateText)
-        sessionStatus = self.parser.extractSessionStatus(pollTitle)
+        sessionStatus = (
+            SessionStatus.CANCELLED if cancelledByReaction else SessionStatus.SCHEDULED
+        )
 
         boxText = "\n".join(
             [
@@ -84,18 +89,12 @@ class PollRecordsBuilder:
             return []
 
         if sessionStatus is SessionStatus.CANCELLED:
-            self.logger.value("cancelled session observed", pollTitle)
-            return [
-                PollRecord(
-                    pollTitle=pollTitle,
-                    pollDateText=pollDateText,
-                    sessionDateText=sessionDateText,
-                    option="",
-                    voterName="",
-                    sourceHint=sourceText[:240],
-                    sessionStatus=sessionStatus,
-                )
-            ]
+            self.logger.info(
+                "cancellation indicator found: emoji=%s participant=%s poll=%s",
+                "😢",
+                self.config.cancellationEmojiName,
+                pollTitle,
+            )
 
         pollRecordsByIdentity: dict[tuple[str, str], PollRecord] = {}
         for snapshotText in dialogTexts or [dialogText]:
@@ -108,9 +107,25 @@ class PollRecordsBuilder:
                 sessionStatus=sessionStatus,
             ):
                 identity = (record.option.casefold(), record.voterName.casefold())
-                pollRecordsByIdentity[identity] = record
+                previousRecord = pollRecordsByIdentity.get(identity)
+                if previousRecord is None or record.voterPhone:
+                    pollRecordsByIdentity[identity] = record
 
         pollRecords = list(pollRecordsByIdentity.values())
+        if sessionStatus is SessionStatus.CANCELLED and not pollRecords:
+            # A voterless sentinel allows persistence to retain the session and
+            # its source status without fabricating an attendance observation.
+            pollRecords.append(
+                PollRecord(
+                    pollTitle=pollTitle,
+                    pollDateText=pollDateText,
+                    sessionDateText=sessionDateText,
+                    option="",
+                    voterName="",
+                    sourceHint=sourceText[:240],
+                    sessionStatus=sessionStatus,
+                )
+            )
         expectedYesVotes = self.parser.extractOptionVoteCountFromText(
             sourceText, self.selectors.yesOptionTexts
         )
@@ -164,6 +179,9 @@ class PollRecordsBuilder:
         yesVoters = self.parser.extractOptionVotersFromText(
             dialogText, optionTexts=self.selectors.yesOptionTexts
         )
+        yesPhones = self._extractVoterPhones(
+            dialogText, optionTexts=self.selectors.yesOptionTexts
+        )
         pollRecords.extend(
             self.buildRecordsForOption(
                 pollTitle=pollTitle,
@@ -171,6 +189,7 @@ class PollRecordsBuilder:
                 sessionDateText=sessionDateText,
                 option="Yes",
                 voterNames=yesVoters,
+                voterPhones=yesPhones,
                 sourceHint=sourceHint,
                 sessionStatus=sessionStatus,
             )
@@ -180,6 +199,9 @@ class PollRecordsBuilder:
             noVoters = self.parser.extractOptionVotersFromText(
                 dialogText, optionTexts=self.selectors.noOptionTexts
             )
+            noPhones = self._extractVoterPhones(
+                dialogText, optionTexts=self.selectors.noOptionTexts
+            )
             pollRecords.extend(
                 self.buildRecordsForOption(
                     pollTitle=pollTitle,
@@ -187,10 +209,15 @@ class PollRecordsBuilder:
                     sessionDateText=sessionDateText,
                     option="No",
                     voterNames=noVoters,
+                    voterPhones=noPhones,
                     sourceHint=sourceHint,
                     sessionStatus=sessionStatus,
                 )
             )
+
+        for record in pollRecords:
+            if record.voterName and record.voterPhone:
+                self.voterPhones[record.voterName.casefold()] = record.voterPhone
 
         return pollRecords
 
@@ -203,16 +230,78 @@ class PollRecordsBuilder:
         voterNames: list[str],
         sourceHint: str,
         sessionStatus: SessionStatus,
+        voterPhones: dict[str, str] | None = None,
     ) -> list[PollRecord]:
-        return [
-            PollRecord(
-                pollTitle=pollTitle,
-                pollDateText=pollDateText,
-                sessionDateText=sessionDateText,
-                option=option,
-                voterName=voterName,
-                sourceHint=sourceHint,
-                sessionStatus=sessionStatus,
+        voterPhones = voterPhones or {}
+        records: list[PollRecord] = []
+        for voterName in voterNames:
+            storedName = stripContactNameMarker(voterName)
+            if not storedName:
+                continue
+            records.append(
+                PollRecord(
+                    pollTitle=pollTitle,
+                    pollDateText=pollDateText,
+                    sessionDateText=sessionDateText,
+                    option=option,
+                    voterName=storedName,
+                    sourceHint=sourceHint,
+                    sessionStatus=sessionStatus,
+                    voterPhone=voterPhones.get(storedName.casefold(), ""),
+                )
             )
-            for voterName in voterNames
-        ]
+        return records
+
+    ## voter metadata utilities
+
+    def _extractVoterPhones(
+        self, dialogText: str, optionTexts: tuple[str, ...]
+    ) -> dict[str, str]:
+        """Return phone metadata keyed by the cleaned voter name preceding it."""
+        optionNames = {value.casefold() for value in optionTexts}
+        allOptionNames = {
+            value.casefold()
+            for value in self.selectors.yesOptionTexts + self.selectors.noOptionTexts
+        }
+        lines = [line.strip() for line in dialogText.splitlines() if line.strip()]
+        phones: dict[str, str] = {}
+        previousVoterName = ""
+        inSection = False
+
+        for line in lines:
+            folded = line.casefold()
+            if folded in optionNames:
+                inSection = True
+                previousVoterName = ""
+                continue
+            if inSection and folded in allOptionNames:
+                break
+            if not inSection:
+                continue
+            if self.parser.looksLikeVoteCount(line) or self.parser.looksLikeSystemText(
+                line
+            ):
+                continue
+
+            if self._looksLikePhoneNumber(line):
+                if previousVoterName:
+                    phones[previousVoterName.casefold()] = self._normalisePhoneNumber(
+                        line
+                    )
+                continue
+
+            cleanedNames = self.parser.cleanVoterNames([line])
+            previousVoterName = (
+                stripContactNameMarker(cleanedNames[0]) if cleanedNames else ""
+            )
+
+        return phones
+
+    def _looksLikePhoneNumber(self, value: str) -> bool:
+        if not re.fullmatch(r"\+?[\d\s().-]+", value):
+            return False
+        return sum(character.isdigit() for character in value) >= 7
+
+    def _normalisePhoneNumber(self, value: str) -> str:
+        digits = "".join(character for character in value if character.isdigit())
+        return digits

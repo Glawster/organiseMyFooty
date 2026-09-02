@@ -4,89 +4,96 @@
 
 InProgress
 
-## Summary
+## Outcome
 
-Recognise WhatsApp session polls whose titles mark the session as cancelled,
-preserve their original source details, and prevent them from contributing to
-attendance calculations.
+As a session organiser, I need a crying-face reaction on an existing WhatsApp
+poll to cancel that session without changing or deleting the poll.
 
 ## Context
 
-A session organiser may mark an existing poll as cancelled by adding
-`(cancelled)` to its title. Treating that poll as an ordinary active session
-would incorrectly add it to attendance reports and distort attendance totals.
-The cancellation must remain visible and auditable rather than causing the
-session record to disappear.
+WhatsApp poll subjects cannot be edited and the organiser does not have the
+ability to delete the polls. Cancellation is therefore represented by exactly
+the `😢` Crying Face reaction on the poll message. The reacting participant is
+not significant and no CLI configuration is required.
 
-## Requirements
+## Scope
 
-1. Session-title parsing must recognise `(cancelled)` case-insensitively.
-2. Recognition must tolerate surrounding whitespace without requiring an exact
-   title suffix.
-3. The original poll title must be preserved unchanged as source data.
-4. The logical session must be recorded with a cancelled status.
-5. A cancelled session must not contribute to attendance processing, member
-   attendance totals, session totals or attendance summaries.
-6. Re-scanning a previously active session after its source title is marked
-   cancelled must update the existing logical session rather than create a
-   duplicate.
-7. Re-scanning a cancelled session whose cancellation marker has been removed
-   must restore it to the appropriate active status, subject to normal source
-   reconciliation rules.
-8. Session cancellation and restoration must produce clear change log messages.
-9. Reports which expose session metadata may identify the session as cancelled,
-   but must not present it as an attended session.
-10. Cancellation observations from multiple sources must be retained and
-    resolved using the persistent attendance store's documented source-conflict
-    rules.
+1. Recognise exactly `😢` from accessible WhatsApp reaction metadata on a
+   session poll.
+2. Ignore other emojis.
+3. Preserve the poll title and captured attendance observations unchanged.
+4. Record the logical session as cancelled and exclude it from effective
+   attendance, reports and totals.
+5. Restore the session when the `😢` reaction is removed.
+6. Revisit captured polls in the selected month so later reaction changes are
+   observable.
+7. Log cancellation and restoration with session identity.
+8. Preserve the last stored status when reaction metadata cannot be inspected;
+   an inspection failure must not imply restoration.
+9. Remove the former `--emoji NAME` CLI option and legacy saved `emojiName`
+   state value.
 
 ## Acceptance criteria
 
-1. Titles containing `(cancelled)` in any letter case are recognised as
-   cancelled.
-2. The source title is retained exactly as captured.
-3. Cancelled sessions remain queryable but are excluded from attendance counts
-   and attendance report columns.
-4. Cancelling an existing session updates that session and logs the change.
-5. Removing the marker restores the session without duplicating it and logs the
-   change.
-6. Similar words which are not the `(cancelled)` marker do not cancel a session.
+1. A poll reaction metadata value containing `😢` cancels the session.
+2. The reacting participant does not affect cancellation.
+3. Another emoji does not cancel the session.
+4. Adding and removing the reaction updates the same logical session, logs the
+   transition and does not duplicate it.
+5. Cancelled attendance evidence remains auditable but is excluded from every
+   attendance report and total.
+6. Reaction recognition is always enabled for session polls.
+7. If reaction inspection fails, the poll is not reconciled and its last stored
+   session status and observations remain unchanged.
+8. `--emoji` is no longer accepted and `emojiName` is removed from saved state.
 
 ## Test coverage
 
-Automated tests must cover case variations, marker position and whitespace,
-false-positive titles, preservation of the original title, exclusion from each
-report type, active-to-cancelled transitions, cancelled-to-active transitions,
-logging and multi-source reconciliation.
+Automated tests must cover CLI removal, automatic crying-face recognition,
+other-emoji false positives, captured-poll rescans, cancellation, restoration,
+report exclusion, logging and multi-source reconciliation.
 
-## Dependencies
+## Dependencies and decisions
 
-The durable status and source-reconciliation behaviour should align with
-[001 — Persistent attendance store](001-persistentAttendanceStore.md).
+- [001 — Persistent attendance store](001-persistentAttendanceStore.md) owns
+  durable status, source reconciliation and audit evidence.
+- Live WhatsApp validation is required because reaction accessibility metadata
+  is an external DOM contract.
+- 2026-09-01 live validation showed WhatsApp exposing cancelled polls with
+  values such as `reaction 😢. View reactions` while not exposing the reacting
+  participant in the static reaction metadata. The reaction itself is therefore
+  the cancellation authority.
 
 ## Out of scope
 
-- Detecting cancellation from free-form chat messages outside a poll title.
+- Inferring cancellation from free-form chat messages.
+- Allowing arbitrary cancellation emojis.
 - Automatically notifying members that a session was cancelled.
 
 ## Verification
 
-- Automated coverage: `tests/test_CancelledSessions.py`
-- Full regression suite and repository formatting/lint checks are required
-  before completion.
-- Live WhatsApp validation remains pending.
+- Automated coverage: `tests/test_cancelledSessions.py` and
+  `tests/test_mainCli.py`
+- Full regression suite and repository formatting/lint checks are required.
+- Live validation must confirm the `😢` reaction is exposed on the poll message.
 
 ## Traceability
 
-- Implementation: `src/whatsapp/models.py`, `src/whatsapp/parsing.py`,
-  `src/whatsapp/pollRecordsBuilder.py`, `src/whatsapp/store.py`, and
-  `src/whatsapp/reports.py`
-- Tests: `tests/test_CancelledSessions.py`
-- Documentation: `documentation/cancelledSessions/README.md`
+- Implementation: `main.py`, `src/organiseMyFooty/cli.py`,
+  `src/attendanceConfig.py`, `src/whatsapp/pollDiscovery.py`,
+  `src/whatsapp/pollRecordsBuilder.py`, `src/whatsapp/scraper.py`, and
+  `src/whatsapp/store.py`
+- Tests: `tests/test_cancelledSessions.py`, `tests/test_mainCli.py`
+- Documentation: `documentation/cancelledSessions.md`
 - Pull request: pending
-- Agent runs: 2026-08-03 Codex implementation run on
-  `feature/002-cancelledSessions`
 
 ## Change history
 
 - 2026-08-03: delivery started on `feature/002-cancelledSessions`.
+- 2026-08-31: replaced edited-title cancellation after confirming WhatsApp
+  poll subjects cannot be changed.
+- 2026-08-31: replaced deletion-based cancellation because the organiser
+  cannot delete polls; cancellation moved to `😢` reactions.
+- 2026-09-01: live DOM validation confirmed the crying-face reaction but not a
+  reliable participant identity; participant configuration and `--emoji` were
+  removed and any `😢` reaction now cancels the session.

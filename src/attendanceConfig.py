@@ -40,6 +40,7 @@ class RuntimeConfig:
     override: bool = False
     scanSince: Optional[date] = None
     storePath: Optional[Path] = None
+    cancellationEmojiName: Optional[str] = "reaction"
 
     @property
     def effectiveGroupNames(self) -> tuple[str, ...]:
