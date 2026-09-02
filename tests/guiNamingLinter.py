@@ -37,6 +37,28 @@ FRAMEWORK_METHOD_EXCEPTIONS = {
     "process",  # logging.LoggerAdapter
 }
 
+# Test doubles must preserve the callable names used by Playwright, datetime,
+# and collection-style dependencies so production code can exercise them.
+TEST_DOUBLE_METHOD_EXCEPTIONS = {
+    "click",
+    "count",
+    "evaluate",
+    "fill",
+    "get_by_text",
+    "hover",
+    "inner_text",
+    "is_visible",
+    "locator",
+    "now",
+    "nth",
+    "press",
+    "scroll_into_view_if_needed",
+    "type",
+    "wait_for_load_state",
+    "wait_for_timeout",
+    "wheel",
+}
+
 LOGGING_METHODS = {
     "action",
     "debug",
@@ -252,6 +274,12 @@ class GuiNamingVisitor(ast.NodeVisitor):
 
         if not self.isTestFile:
             return False
+
+        if (
+            isinstance(getattr(node, "parent", None), ast.ClassDef)
+            and node.name in TEST_DOUBLE_METHOD_EXCEPTIONS
+        ):
+            return True
 
         # Pytest fixture names are dependency-injection keys and commonly use
         # snake_case. Decorators may be @fixture, @pytest.fixture, or calls of

@@ -11,7 +11,7 @@ from socialMediaSummary import (
 
 
 class TestBuildSocialMediaSummary:
-    def test_builds_paste_ready_monthly_summary(self):
+    def testBuildsPasteReadyMonthlySummary(self):
         rows = [
             ["", "20260303", "20260305"],
             ["", "week 1", ""],
@@ -27,14 +27,14 @@ class TestBuildSocialMediaSummary:
             "- Bob: 1/2 attended, 0 no, 1 no reply"
         )
 
-    def test_returns_fallback_when_sessions_are_missing(self):
+    def testReturnsFallbackWhenSessionsAreMissing(self):
         rows = [[""], [""], ["name"]]
 
         assert buildSocialMediaSummary(rows) == "Attendance summary unavailable."
 
 
 class TestBuildSocialMediaSummaryFromAttendanceReport:
-    def test_reads_attendance_report_csv(self, tmp_path: Path):
+    def testReadsAttendanceReportCsv(self, tmp_path: Path):
         reportPath = tmp_path / "attendanceReport.csv"
         rows = [
             ["", "20260401"],

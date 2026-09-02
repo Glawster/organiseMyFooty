@@ -20,11 +20,11 @@ from attendanceConfig import (
 from organiseMyProjects.logUtils import getLogger, setApplication  # type: ignore
 
 APPLICATION_NAME = "organiseMyFooty"
-
 setApplication(APPLICATION_NAME)
 logger = getLogger(includeConsole=False)
 
 from whatsappAttendance import AttendanceExporter  # noqa: E402
+from whatsapp.contactRefresh import refreshContacts  # noqa: E402
 
 
 @dataclass
@@ -62,26 +62,19 @@ _MONTH_LOOKUP = {
 def normaliseMonthInput(monthInput: str | None) -> str | None:
     if not monthInput:
         return None
-
     value = monthInput.strip().lower()
-
     if len(value) == 7 and value[4] == "-":
         return value
-
     if value.isdigit():
         monthNum = int(value)
     else:
         monthNum = _MONTH_LOOKUP.get(value)
-
     if not monthNum or not 1 <= monthNum <= 12:
         raise ValueError(f"Invalid month: {monthInput}")
-
     now = datetime.now()
     year = now.year
-
     if monthNum > now.month:
         year -= 1
-
     return f"{year:04d}-{monthNum:02d}"
 
 
@@ -91,10 +84,8 @@ def getStateFile() -> Path:
 
 def loadState() -> dict:
     stateFile = getStateFile()
-
     if not stateFile.exists():
         return {}
-
     try:
         return json.loads(stateFile.read_text())
     except json.JSONDecodeError:
@@ -105,30 +96,25 @@ def getStateGroupNames(state: dict) -> list[str]:
     groupNames = state.get("groupNames")
     if isinstance(groupNames, list):
         return [str(name).strip() for name in groupNames if str(name).strip()]
-
     groupName = state.get("groupName")
     if groupName:
         return [str(groupName).strip()]
-
     return []
 
 
 def normaliseGroupNames(groupNames: list[str] | None) -> list[str]:
     if not groupNames:
         return []
-
     return [name.strip() for name in groupNames if name.strip()]
 
 
 def groupNamesMerge(*groupNameLists: list[str]) -> list[str]:
     """Combine group lists in order without saving duplicate names."""
     mergedGroupNames = []
-
     for groupNames in groupNameLists:
         for groupName in normaliseGroupNames(groupNames):
             if groupName not in mergedGroupNames:
                 mergedGroupNames.append(groupName)
-
     return mergedGroupNames
 
 
@@ -150,7 +136,7 @@ def saveState(groupNames: list[str], month: str | None) -> None:
     stateFile.parent.mkdir(parents=True, exist_ok=True)
     state = loadState()
     savedGroupNames = groupNamesMerge(getStateGroupNames(state), groupNames)
-
+    state.pop("emojiName", None)
     state.update(
         {
             "groupName": savedGroupNames[0] if savedGroupNames else "",
@@ -158,7 +144,6 @@ def saveState(groupNames: list[str], month: str | None) -> None:
             "month": month,
         }
     )
-
     stateFile.write_text(json.dumps(state, indent=2))
 
 
@@ -168,7 +153,6 @@ def buildParser(state: dict) -> argparse.ArgumentParser:
         description="Export WhatsApp poll attendance for one or more groups and a month."
     )
     parser.set_defaults(savedGroupNames=savedGroupNames)
-
     parser.add_argument(
         "-g",
         "--group",
@@ -177,21 +161,18 @@ def buildParser(state: dict) -> argparse.ArgumentParser:
         metavar="GROUP",
         help="exact WhatsApp group name; repeat for multiple groups",
     )
-
     parser.add_argument(
         "-m",
         "--month",
         default=state.get("month"),
         help="month as YYYY-MM, name or number. Defaults to previous month if not specified.",
     )
-
     parser.add_argument(
         "-y",
         "--confirm",
         action="store_true",
-        help="execute changes and write CSV exports (default is dry-run)",
+        help="execute changes; required to write exports or refresh the contact database",
     )
-
     parser.add_argument(
         "--override",
         action="store_true",
@@ -202,7 +183,12 @@ def buildParser(state: dict) -> argparse.ArgumentParser:
         metavar="YYYY-MM-DD",
         help="inclusive cutoff; requires --override",
     )
-
+    parser.add_argument(
+        "--no-scrape",
+        action="store_true",
+        dest="noScrape",
+        help="generate reports from the attendance database without opening WhatsApp",
+    )
     parser.add_argument(
         "--view",
         dest="viewAttendance",
@@ -210,19 +196,23 @@ def buildParser(state: dict) -> argparse.ArgumentParser:
         help="inspect stored attendance for the selected month instead of scanning",
     )
     parser.add_argument(
+        "--get-contacts",
+        dest="getContacts",
+        metavar="COMPANY",
+        help="search WhatsApp contacts by company name, refresh matching phone entries, and exit",
+    )
+    parser.add_argument(
         "--config",
         dest="showConfig",
         action="store_true",
         help="print the resolved runtime configuration and exit",
     )
-
     parser.add_argument(
         "-d",
         "--debug",
         action="store_true",
         help="enable debug logging",
     )
-
     return parser
 
 
@@ -230,10 +220,8 @@ def buildConfig(args: argparse.Namespace, dryRun: bool, logLevel: int) -> Config
     month = normaliseMonthInput(args.month)
     monthWindow = resolveMonthWindow(month)
     groupNames = tuple(normaliseGroupNames(args.groupNames))
-
     outputDir = ensureOutputDir(defaultOutputDir(groupNames, monthWindow))
     userDataDir = ensureOutputDir(defaultUserDataDir())
-
     runtime = RuntimeConfig(
         groupName=formatGroupNames(groupNames),
         monthWindow=monthWindow,
@@ -252,7 +240,6 @@ def buildConfig(args: argparse.Namespace, dryRun: bool, logLevel: int) -> Config
         override=args.override,
         scanSince=resolveScanCutoff(args.override, parseScanSince(args.scan_since)),
     )
-
     return Config(runtime=runtime)
 
 
@@ -295,20 +282,36 @@ def serialiseRuntimeConfig(runtime: RuntimeConfig) -> dict:
     }
 
 
-def run(config: Config) -> None:
+def run(config: Config, noScrape: bool = False) -> None:
     appLogger = getLogger(level=config.runtime.logLevel)
-
     appLogger.value("groups", ", ".join(config.runtime.effectiveGroupNames))
     appLogger.value("dryRun", config.runtime.dryRun)
     appLogger.value("logLevel", config.runtime.logLevel)
     appLogger.value("debug", config.runtime.logLevel == logging.DEBUG)
     appLogger.value("override", config.runtime.override)
+    appLogger.value("noScrape", noScrape)
+    appLogger.value("cancellation reaction", "😢 enabled")
     appLogger.value(
         "scanSince",
         config.runtime.scanSince.isoformat() if config.runtime.scanSince else "none",
     )
+    exporter = AttendanceExporter(config.runtime)
+    if noScrape:
+        appLogger.info("database-only report generation; WhatsApp scrape skipped")
+        exporter.pollScraper.collectPollAttendance = lambda: []
+    exporter.run()
 
-    AttendanceExporter(config.runtime).run()
+
+def getContacts(config: Config, companySearch: str) -> None:
+    appLogger = getLogger(level=config.runtime.logLevel)
+    appLogger.value("dryRun", config.runtime.dryRun)
+    appLogger.value("logLevel", config.runtime.logLevel)
+    appLogger.value("debug", config.runtime.logLevel == logging.DEBUG)
+    appLogger.value("contact company search", companySearch)
+    appLogger.doing("refreshing WhatsApp contacts")
+    count = refreshContacts(config.runtime, companySearch)
+    appLogger.value("contact phone database entries", count)
+    appLogger.done("contact refresh")
 
 
 def viewAttendance(config: Config) -> None:
@@ -324,7 +327,6 @@ def viewAttendance(config: Config) -> None:
             )
         ],
     }
-
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
 
@@ -333,23 +335,23 @@ def main() -> None:
     parser = buildParser(state)
     args = parser.parse_args()
     args.groupNames = groupNamesResolve(args.groupNames, args.savedGroupNames)
-
     try:
         resolveScanCutoff(args.override, parseScanSince(args.scan_since))
     except ValueError as exc:
         parser.error(str(exc))
-
-    if not args.groupNames and not (args.showConfig or args.viewAttendance):
+    groupIndependentMode = args.showConfig or args.viewAttendance or args.getContacts
+    if not args.groupNames and not groupIndependentMode:
         parser.error("--group is required.")
-
     dryRun = not args.confirm
     logLevel = logging.DEBUG if args.debug else logging.INFO
     appLogger = getLogger(includeConsole=True, dryRun=dryRun, level=logLevel)
-
     appLogger.doing("starting application")
-
     config = buildConfig(args, dryRun, logLevel)
-
+    if not args.getContacts:
+        saveState(
+            groupNames=args.groupNames,
+            month=normaliseMonthInput(args.month),
+        )
     if args.showConfig:
         print(
             json.dumps(
@@ -357,12 +359,12 @@ def main() -> None:
             )
         )
         return
-
     if args.viewAttendance:
         viewAttendance(config)
         return
-
-    run(config)
-    saveState(groupNames=args.groupNames, month=normaliseMonthInput(args.month))
-
+    if args.getContacts:
+        getContacts(config, args.getContacts)
+        appLogger.done("application complete")
+        return
+    run(config, noScrape=args.noScrape)
     appLogger.done("application complete")

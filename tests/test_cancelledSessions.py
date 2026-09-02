@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 import sqlite3
+import re
 
 import pytest
 
@@ -12,6 +13,7 @@ from attendanceConfig import MonthWindow, RuntimeConfig
 from whatsapp.models import PollRecord, SessionStatus
 from whatsapp.parsing import PollTextParser
 from whatsapp.pollRecordsBuilder import PollRecordsBuilder
+from whatsapp.pollDiscovery import PollDiscovery
 from whatsapp.reports import AttendanceReportBuilder
 from whatsapp.selectors import DEFAULT_SELECTORS
 from whatsapp.store import AttendanceStore
@@ -20,6 +22,25 @@ from whatsapp.store import AttendanceStore
 class StubDiscovery:
     def extractPollDateText(self, locator, sourceText: str) -> str:
         return "01/03/2026"
+
+
+class ReactionLocator:
+    def __init__(self, values: list[str]):
+        self.values = values
+
+    def evaluate(self, _script, participantName: str):
+        namePattern = re.compile(
+            rf"(?<!\w){re.escape(participantName.casefold())}(?!\w)"
+        )
+        return any(
+            "😢" in value and namePattern.search(value.casefold())
+            for value in self.values
+        )
+
+
+class UnavailableReactionLocator:
+    def evaluate(self, _script, _participantName: str):
+        raise RuntimeError("reaction metadata unavailable")
 
 
 def _record(
@@ -58,6 +79,7 @@ def parser():
         includeNoVotes=True,
         resume=False,
         pollTitleFilter=None,
+        cancellationEmojiName="Alex Example",
     )
     return PollTextParser(config, DEFAULT_SELECTORS)
 
@@ -70,38 +92,42 @@ def store(tmp_path, parser):
 
 
 @pytest.mark.parametrize(
-    "title",
+    "metadata, expected",
     [
-        "Monday 7pm Riverside (cancelled)",
-        "Monday (CANCELLED) 7pm Riverside",
-        "  ( Cancelled )   Monday 7pm Riverside  ",
+        (["😢 by Another Person"], False),
+        (["😢 Alex Example"], True),
+        (["😢 Alexandra Example"], False),
+        (["😢 Alex Example", "😢 by Another Person"], True),
     ],
 )
-def test_title_parser_recognises_case_position_and_whitespace(parser, title):
-    assert parser.extractSessionStatus(title) is SessionStatus.CANCELLED
-    assert parser.isValidSessionPoll(title)
+def testOnlySadFaceFromConfiguredParticipantCancels(parser, metadata, expected):
+    discovery = PollDiscovery(parser.config, DEFAULT_SELECTORS, parser)
+
+    assert discovery.pollHasCancellationReaction(ReactionLocator(metadata)) is expected
 
 
-@pytest.mark.parametrize(
-    "title",
-    [
-        "Monday 7pm cancellation training",
-        "Monday 7pm session cancelled",
-        "Monday 7pm (cancelled-ish)",
-    ],
-)
-def test_title_parser_avoids_similar_false_positives(parser, title):
-    assert parser.extractSessionStatus(title) is SessionStatus.SCHEDULED
+def testOtherEmojiFromConfiguredParticipantDoesNotCancel(parser):
+    discovery = PollDiscovery(parser.config, DEFAULT_SELECTORS, parser)
+
+    assert not discovery.pollHasCancellationReaction(
+        ReactionLocator(["😡 Alex Example", "❤️ Alex Example"])
+    )
 
 
-def test_cancelled_poll_preserves_title_without_processing_voters(parser):
+def testReactionInspectionFailureIsUnknownRatherThanScheduled(parser):
+    discovery = PollDiscovery(parser.config, DEFAULT_SELECTORS, parser)
+
+    assert discovery.pollHasCancellationReaction(UnavailableReactionLocator()) is None
+
+
+def testCancelledPollPreservesTitleAndCapturedVoters(parser):
     builder = PollRecordsBuilder(
         config=parser.config,
         selectors=DEFAULT_SELECTORS,
         parser=parser,
         discovery=StubDiscovery(),
     )
-    title = "Monday 7pm Riverside   (CaNcElLeD)"
+    title = "Monday 7pm Riverside"
     sourceText = f"{title}\nSelect one or more\n2 votes\n01/03/2026"
 
     records = builder.buildPollRecordsFromDialog(
@@ -109,24 +135,28 @@ def test_cancelled_poll_preserves_title_without_processing_voters(parser):
         dialog=None,
         dialogText=f"{title}\nYes\nAlex Example\nBlair Example",
         sourceText=sourceText,
+        cancelledByReaction=True,
     )
 
-    assert records == [
-        PollRecord(
-            pollTitle=title,
-            pollDateText="20260301",
-            sessionDateText="20260302 19:00",
-            option="",
-            voterName="",
-            sourceHint=sourceText,
-            sessionStatus=SessionStatus.CANCELLED,
-        )
-    ]
+    assert {record.voterName for record in records} == {
+        "Alex Example",
+        "Blair Example",
+    }
+    assert all(record.option == "Yes" for record in records)
+    assert all(record.pollTitle == title for record in records)
+    assert all(record.sessionStatus is SessionStatus.CANCELLED for record in records)
+    assert builder.logger.hasCall(
+        "info",
+        "cancellation indicator found: emoji=%s participant=%s poll=%s",
+        "😢",
+        "Alex Example",
+        title,
+    )
 
 
-def test_cancel_and_restore_preserve_identity_title_attendance_and_logs(store):
+def testCancelAndRestorePreserveIdentityTitleAttendanceAndLogs(store):
     scheduled = _record()
-    cancelledTitle = "Monday 7pm Riverside   (CaNcElLeD)"
+    cancelledTitle = "Monday 7pm Riverside"
     cancelled = _record(cancelledTitle, SessionStatus.CANCELLED)
 
     sessionId = store.pollReconcile("Riverside A", "message-1", [scheduled])
@@ -144,19 +174,22 @@ def test_cancel_and_restore_preserve_identity_title_attendance_and_logs(store):
     assert store.attendanceQuery(date(2026, 3, 1), date(2026, 3, 31)) == []
     assert store.membersForSession(sessionId) == []
     assert store.sessionsForMember(1, date(2026, 3, 1), date(2026, 3, 31)) == []
-    assert store.logger.has_call("value", "session cancelled", sessionId)
+    observation = store.observationsForAttendance(sessionId, 1)[0]
+    assert observation["raw_member_name"] == "Alex Example"
+    assert observation["active"] == 1
+    assert store.logger.hasCall("value", "session cancelled", sessionId)
 
     restoredId = store.pollReconcile("Riverside A", "message-1", [scheduled])
 
     assert restoredId == sessionId
     assert store.connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 1
     assert len(store.attendanceRecords(date(2026, 3, 1), date(2026, 3, 31))) == 1
-    assert store.logger.has_call("value", "session restored", sessionId)
+    assert store.logger.hasCall("value", "session restored", sessionId)
 
 
-def test_cancelled_session_without_voters_remains_queryable(store):
+def testCancelledSessionWithoutVotersRemainsQueryable(store):
     cancelled = _record(
-        "Monday 7pm Riverside (cancelled)",
+        "Monday 7pm Riverside",
         SessionStatus.CANCELLED,
         voterName="",
     )
@@ -177,9 +210,9 @@ def test_cancelled_session_without_voters_remains_queryable(store):
     assert sessionId == 1
 
 
-def test_multi_source_cancellation_requires_every_source_to_restore(store):
+def testMultiSourceCancellationRequiresEverySourceToRestore(store):
     scheduled = _record()
-    cancelled = _record("Monday 7pm Riverside (cancelled)", SessionStatus.CANCELLED)
+    cancelled = _record("Monday 7pm Riverside", SessionStatus.CANCELLED)
     sessionId = store.pollReconcile("Riverside A", "message-a", [scheduled])
     otherId = store.pollReconcile("Riverside B", "message-b", [cancelled])
 
@@ -212,21 +245,21 @@ def test_multi_source_cancellation_requires_every_source_to_restore(store):
     )
 
 
-def test_reports_exclude_cancelled_records_defensively(parser):
+def testReportsExcludeCancelledRecordsDefensively(parser):
     builder = AttendanceReportBuilder(parser)
-    cancelled = _record("Monday 7pm Riverside (cancelled)", SessionStatus.CANCELLED)
+    cancelled = _record("Monday 7pm Riverside", SessionStatus.CANCELLED)
 
     assert builder.buildSummaryRows([cancelled]) == []
     assert builder.buildAttendanceReportRows([cancelled]) == [
-        ["week"],
-        ["date"],
-        ["venue"],
-        ["day"],
-        ["name"],
+        ["Week"],
+        ["Date"],
+        ["Venue"],
+        ["Day"],
+        ["Name"],
     ]
 
 
-def test_schema_version_one_migrates_source_status(tmp_path):
+def testSchemaVersionOneMigratesSourceStatus(tmp_path):
     path = tmp_path / "version-one.sqlite3"
     connection = sqlite3.connect(path)
     connection.executescript(

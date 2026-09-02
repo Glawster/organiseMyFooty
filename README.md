@@ -13,7 +13,7 @@ This file is the documentation entry point. Living guides:
 - [Testing process](documentation/testingProcess.md)
 - [Release process](documentation/howToRelease.md)
 - [Persistent attendance store](documentation/persistentAttendanceStore/README.md)
-- [Cancelled sessions](documentation/cancelledSessions/README.md)
+- [Cancelled sessions](documentation/cancelledSessions.md)
 - [Project records](project/README.md)
 - [Requirements index](project/requirements/README.md)
 - [Agent instructions](.github/agent-instructions.md)
@@ -170,8 +170,8 @@ directories. Live-browser checks are manual.
 
 - WhatsApp Web selectors live in `src/whatsapp/selectors.py` and may need
   updating if WhatsApp changes its UI.
-- Cancelled session polls are recognised from `(cancelled)` in the poll title
-  and are excluded from attendance totals; see
-  [Cancelled sessions](documentation/cancelledSessions/README.md).
+- Use `--emoji NAME` to treat exactly that participant's `😢` poll reaction
+  as cancellation; the name is remembered for later runs. See
+  [Cancelled sessions](documentation/cancelledSessions.md).
 - Attendance backup and scan-boundary behaviour are described in
   [Persistent attendance store](documentation/persistentAttendanceStore/README.md).

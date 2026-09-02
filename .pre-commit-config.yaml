@@ -11,6 +11,6 @@ repos:
     hooks:
       - id: gui-naming-linter
         name: GUI Naming Linter
-        entry: runLinter
-        language: python
+        entry: python3 tests/runLinter.py
+        language: system
         types: [python]

@@ -25,7 +25,7 @@ def store(tmp_path):
         yield value
 
 
-def test_schema_creation_enables_foreign_keys_and_versions(store):
+def testSchemaCreationEnablesForeignKeysAndVersions(store):
     assert store.connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     assert (
         store.connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
@@ -33,7 +33,7 @@ def test_schema_creation_enables_foreign_keys_and_versions(store):
     assert store.connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
 
 
-def test_newer_schema_is_rejected(tmp_path):
+def testNewerSchemaIsRejected(tmp_path):
     path = tmp_path / "future.sqlite3"
     connection = sqlite3.connect(path)
     connection.execute(f"PRAGMA user_version={SCHEMA_VERSION + 1}")
@@ -42,7 +42,7 @@ def test_newer_schema_is_rejected(tmp_path):
         AttendanceStore(path).open()
 
 
-def test_reconcile_is_idempotent_and_changes_response(store):
+def testReconcileIsIdempotentAndChangesResponse(store):
     first = store.pollReconcile("Group A", "message-1", [record()])
     second = store.pollReconcile("Group A", "message-1", [record()])
     assert first == second
@@ -59,7 +59,7 @@ def test_reconcile_is_idempotent_and_changes_response(store):
     assert store.summary.attendanceUpdated == 1
 
 
-def test_incomplete_poll_does_not_remove_unseen_observations(store):
+def testIncompletePollDoesNotRemoveUnseenObservations(store):
     store.pollReconcile("Group A", "message-1", [record(), record("Bob")])
     store.pollReconcile("Group A", "message-1", [record()], complete=False)
     assert (
@@ -71,7 +71,7 @@ def test_incomplete_poll_does_not_remove_unseen_observations(store):
     )
 
 
-def test_multiple_sources_share_session_and_conflict_is_explicit(store):
+def testMultipleSourcesShareSessionAndConflictIsExplicit(store):
     session = store.pollReconcile("Group A", "message-a", [record(option="No")])
     other = store.pollReconcile(
         "Group B", "message-b", [record(option="Yes", title="Monday Football")]
@@ -85,7 +85,7 @@ def test_multiple_sources_share_session_and_conflict_is_explicit(store):
     assert len(observations) == 2
 
 
-def test_removing_one_source_keeps_other_source_support(store):
+def testRemovingOneSourceKeepsOtherSourceSupport(store):
     store.pollReconcile("Group A", "message-a", [record(), record("Bob")])
     store.pollReconcile("Group B", "message-b", [record("Bob")])
     store.pollReconcile("Group A", "message-a", [record()], complete=True)
@@ -95,7 +95,7 @@ def test_removing_one_source_keeps_other_source_support(store):
     ]
 
 
-def test_alias_matching_and_ambiguous_alias_rejected(store):
+def testAliasMatchingAndAmbiguousAliasRejected(store):
     store.pollReconcile("Group A", "message-a", [record("Alice Smith")])
     store.memberAliasAdd(1, "Ali")
     store.pollReconcile(
@@ -109,7 +109,7 @@ def test_alias_matching_and_ambiguous_alias_rejected(store):
         store.memberAliasAdd(2, "Ali")
 
 
-def test_date_range_and_filtered_queries(store):
+def testDateRangeAndFilteredQueries(store):
     store.pollReconcile("Group A", "may", [record(session="20260504 19:00")])
     store.pollReconcile("Group A", "june", [record(session="20260604 19:00")])
     store.pollReconcile("Group A", "july", [record(session="20260704 19:00")])
@@ -126,7 +126,7 @@ def test_date_range_and_filtered_queries(store):
     )
 
 
-def test_attendance_records_preserve_original_poll_title(store):
+def testAttendanceRecordsPreserveOriginalPollTitle(store):
     store.pollReconcile(
         "Group A",
         "message-1",
@@ -143,7 +143,7 @@ def test_attendance_records_preserve_original_poll_title(store):
     assert records[0].pollTitle == "Wednesday 11am Football Factory"
 
 
-def test_transaction_rolls_back_incomplete_unit(store):
+def testTransactionRollsBackIncompleteUnit(store):
     with pytest.raises(sqlite3.IntegrityError):
         with store.transaction() as connection:
             connection.execute(
@@ -155,7 +155,7 @@ def test_transaction_rolls_back_incomplete_unit(store):
     assert store.connection.execute("SELECT COUNT(*) FROM members").fetchone()[0] == 0
 
 
-def test_scan_lifecycle_and_stable_boundary_identity(store):
+def testScanLifecycleAndStableBoundaryIdentity(store):
     source = store.sourceEnsure("whatsapp", "group-a", "Group A")
     store.connection.commit()
     scan = store.scanStart(source, date(2026, 5, 1), date(2026, 5, 31))
@@ -168,9 +168,7 @@ def test_scan_lifecycle_and_stable_boundary_identity(store):
     assert not store.sourcePollCaptured("whatsapp", "group a", "Monday Training")
 
 
-def test_captured_boundary_is_independent_per_group_and_override_disables_it(
-    store, tmp_path
-):
+def testCapturedPollDoesNotStopReactionAwareRescan(store, tmp_path):
     config = RuntimeConfig(
         "Group A",
         MonthWindow("2026-05", date(2026, 5, 1), date(2026, 5, 31)),
@@ -195,7 +193,7 @@ def test_captured_boundary_is_independent_per_group_and_override_disables_it(
     )
     store.pollReconcile("Group A", "stable-id", [record()])
 
-    assert scraper.capturedPollIsBoundary("Group A", "stable-id")
+    assert not scraper.capturedPollIsBoundary("Group A", "stable-id")
     assert not scraper.capturedPollIsBoundary("Group B", "stable-id")
     assert not scraper.capturedPollIsBoundary("Group A", "")
 
@@ -210,7 +208,7 @@ def test_captured_boundary_is_independent_per_group_and_override_disables_it(
     assert not overrideScraper.capturedPollIsBoundary("Group A", "stable-id")
 
 
-def test_scan_cutoff_standard_custom_and_year_boundary():
+def testScanCutoffStandardCustomAndYearBoundary():
     assert resolveScanCutoff(True, None, date(2026, 8, 15)) == date(2026, 6, 1)
     assert resolveScanCutoff(True, None, date(2026, 1, 10)) == date(2025, 11, 1)
     assert resolveScanCutoff(True, date(2026, 2, 15), date(2026, 8, 1)) == date(

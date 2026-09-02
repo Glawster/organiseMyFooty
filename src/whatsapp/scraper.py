@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 
 from attendanceConfig import RuntimeConfig
 from organiseMyProjects.logUtils import getLogger  # type: ignore[import]
-from whatsapp.models import PollRecord
+from whatsapp.models import PollRecord, SessionStatus
 from whatsapp.navigation import GroupNotFoundError, WhatsAppNavigation
 from whatsapp.parsing import PollTextParser
 from whatsapp.pollDialog import PollDialog
@@ -46,6 +46,7 @@ class WhatsAppPollScraper:
             discovery=self.discovery,
         )
         self.stopAfterCurrentPass = False
+        self.currentScanRecords: list[PollRecord] = []
 
     ## date window helpers
 
@@ -106,15 +107,8 @@ class WhatsAppPollScraper:
     ## public api
 
     def capturedPollIsBoundary(self, groupName: str, stableMessageKey: str) -> bool:
-        """Return whether a reliable source identity ends this group's normal scan."""
-        return bool(
-            self.attendanceStore
-            and stableMessageKey
-            and not self.config.override
-            and self.attendanceStore.sourcePollCaptured(
-                "whatsapp", normaliseName(groupName), stableMessageKey
-            )
-        )
+        """Captured polls remain scannable because reactions can change later."""
+        return False
 
     def collectPollAttendance(self) -> list[PollRecord]:
         from playwright.sync_api import sync_playwright
@@ -122,6 +116,7 @@ class WhatsAppPollScraper:
         recordsByPollKey: OrderedDict[str, list[PollRecord]] = OrderedDict()
         pollCount = 0
         self.stopAfterCurrentPass = False
+        self.currentScanRecords = []
 
         with sync_playwright() as playwright:
             browserContext = playwright.chromium.launch_persistent_context(
@@ -257,16 +252,17 @@ class WhatsAppPollScraper:
             finally:
                 browserContext.close()
 
-        if self.attendanceStore:
-            return self.attendanceStore.attendanceRecords(
-                self.config.monthWindow.startDate, self.config.monthWindow.endDate
-            )
         records = [
             record
             for pollRecords in recordsByPollKey.values()
             for record in pollRecords
         ]
-        return deduplicateRecords(records)
+        self.currentScanRecords = deduplicateRecords(records)
+        if self.attendanceStore:
+            return self.attendanceStore.attendanceRecords(
+                self.config.monthWindow.startDate, self.config.monthWindow.endDate
+            )
+        return self.currentScanRecords
 
     ## scrape orchestration
 
@@ -282,6 +278,14 @@ class WhatsAppPollScraper:
     ) -> int:
         groupName = groupName or self.config.groupName
         sourceText = self.discovery.extractPollSourceText(locator)
+        reactionInspector = getattr(self.discovery, "pollHasCancellationReaction", None)
+        reactionStatus = reactionInspector(locator) if reactionInspector else False
+        if reactionStatus is None:
+            self.logger.warning(
+                "skipping poll because cancellation reaction state is unavailable"
+            )
+            return 0
+        cancelledByReaction = reactionStatus
 
         if self.shouldSkipForTitleFilter(sourceText):
             return 0
@@ -295,7 +299,7 @@ class WhatsAppPollScraper:
             self.stopAfterCurrentPass = True
             return 0
 
-        basePollKey, pollTitle, _pollDateText = self.buildPollKeyForLocator(
+        basePollKey, pollTitle, pollDateText = self.buildPollKeyForLocator(
             sourceText=sourceText,
             pollTitle=pollTitle,
             rawDateText=rawDateText,
@@ -306,6 +310,30 @@ class WhatsAppPollScraper:
             totalPolls=totalPolls,
             pollTitle=pollTitle,
         )
+
+        if cancelledByReaction and pollDateText:
+            sessionDateText = self.parser.calculateSessionDateText(
+                pollTitle=pollTitle,
+                pollDateText=pollDateText,
+            )
+            if self.parser.isSessionInMonthWindow(sessionDateText):
+                cancellationRecord = PollRecord(
+                    pollTitle=pollTitle,
+                    pollDateText=pollDateText,
+                    sessionDateText=sessionDateText,
+                    option="",
+                    voterName="",
+                    sourceHint=sourceText[:240],
+                    sessionStatus=SessionStatus.CANCELLED,
+                )
+                recordsByPollKey[pollKey] = [cancellationRecord]
+                if self.attendanceStore and not self.config.dryRun:
+                    self.attendanceStore.pollReconcile(
+                        groupName,
+                        pollExternalId or f"derived:{pollKey}",
+                        [cancellationRecord],
+                        complete=False,
+                    )
 
         try:
             if not self.dialog.openPollVotes(locator):
@@ -329,9 +357,30 @@ class WhatsAppPollScraper:
                 sourceText=sourceText,
                 rawDateText=rawDateText,
                 dialogTexts=dialogTexts,
+                cancelledByReaction=cancelledByReaction,
             )
             if not pollRecords:
                 return 0
+
+            singleWordVoters = sorted(
+                {
+                    record.voterName
+                    for record in pollRecords
+                    if record.voterName
+                    and len(record.voterName.split()) == 1
+                    and not self.recordsBuilder.voterPhones.get(
+                        record.voterName.casefold()
+                    )
+                }
+            )
+            metadataReader = getattr(self.dialog, "extractVoterPhoneMetadata", None)
+            hiddenPhones = (
+                metadataReader(dialog, singleWordVoters)
+                if metadataReader and singleWordVoters
+                else {}
+            )
+            for voterName, phone in hiddenPhones.items():
+                self.recordsBuilder.voterPhones.setdefault(voterName, phone)
 
             for record in pollRecords[:1]:
                 self.logger.debug(

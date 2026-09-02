@@ -214,7 +214,7 @@ omp/
 Rules
 
 - Files originate in the canonical `organiseMyProjects` repository.
-- Projects import these modules using `from omp...`.
+- Projects import these modules using `from organiseMyProjects..`.
 - Projects must not import runtime modules directly from
   `organiseMyProjects`.
 - Local modifications should not be made to synchronised files.

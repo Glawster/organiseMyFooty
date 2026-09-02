@@ -25,6 +25,137 @@ class PollDiscovery:
 
     ## public api
 
+    def pollHasCancellationReaction(self, locator) -> bool | None:
+        """Return reaction state, or ``None`` when WhatsApp cannot be inspected."""
+        participantName = (self.config.cancellationEmojiName or "").strip()
+        if not participantName:
+            return False
+
+        # The visible reaction pill can sit just outside WhatsApp's inner message
+        # node. Inspect bounded ancestors and reaction-related subtrees rather than
+        # requiring the emoji and participant name on the same DOM element.
+        script = r"""
+        (node, participantName) => {
+            const normalise = (value) => (value || "").replace(/\s+/g, " ").trim();
+            const name = participantName.toLocaleLowerCase();
+            const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const participantPattern = new RegExp(
+                `(^|[^\\p{L}\\p{N}])${escapedName}($|[^\\p{L}\\p{N}])`,
+                'u'
+            );
+            const valuesFor = (root) => {
+                const values = [];
+                const seen = new Set();
+                const add = (value) => {
+                    const text = normalise(value);
+                    if (!text || seen.has(text)) return;
+                    seen.add(text);
+                    values.push(text);
+                };
+                add(root?.innerText || root?.textContent || "");
+                add(root?.getAttribute?.('aria-label'));
+                add(root?.getAttribute?.('title'));
+                add(root?.getAttribute?.('data-testid'));
+                for (const element of root?.querySelectorAll?.(
+                    '[aria-label], [title], [data-testid], span, div, button'
+                ) || []) {
+                    const ariaLabel = element.getAttribute('aria-label') || '';
+                    const title = element.getAttribute('title') || '';
+                    const testId = element.getAttribute('data-testid') || '';
+                    const text = normalise(element.innerText || element.textContent || '');
+                    if (
+                        /react/i.test(testId)
+                        || ariaLabel.includes('😢')
+                        || title.includes('😢')
+                        || text.includes('😢')
+                        || participantPattern.test(ariaLabel.toLocaleLowerCase())
+                        || participantPattern.test(title.toLocaleLowerCase())
+                    ) {
+                        add(ariaLabel);
+                        add(title);
+                        add(testId);
+                        add(text);
+                    }
+                }
+                return values;
+            };
+
+            const roots = [];
+            const seenRoots = new Set();
+            const addRoot = (root) => {
+                if (root && !seenRoots.has(root)) {
+                    seenRoots.add(root);
+                    roots.push(root);
+                }
+            };
+            addRoot(node.closest('[data-id]'));
+            addRoot(node.closest('[data-testid*="msg"]'));
+            let current = node;
+            for (let depth = 0; current && depth < 6; depth += 1) {
+                addRoot(current);
+                current = current.parentElement;
+            }
+
+            const candidates = [];
+            for (const root of roots) {
+                const rootValues = valuesFor(root);
+                const rootText = rootValues.join(' | ');
+                const hasEmoji = rootText.includes('😢');
+                const hasParticipant = participantPattern.test(rootText.toLocaleLowerCase());
+                if (hasEmoji || hasParticipant) {
+                    candidates.push(...rootValues);
+                }
+                if (hasEmoji && hasParticipant) {
+                    return {
+                        matched: true,
+                        candidates: Array.from(new Set(candidates)).slice(0, 12),
+                    };
+                }
+
+                for (const element of root.querySelectorAll(
+                    '[data-testid*="react" i], [aria-label*="😢"], [title*="😢"]'
+                )) {
+                    let reactionRoot = element;
+                    for (let depth = 0; reactionRoot && depth < 4; depth += 1) {
+                        const values = valuesFor(reactionRoot);
+                        const combined = values.join(' | ');
+                        candidates.push(...values);
+                        if (
+                            combined.includes('😢')
+                            && participantPattern.test(combined.toLocaleLowerCase())
+                        ) {
+                            return {
+                                matched: true,
+                                candidates: Array.from(new Set(candidates)).slice(0, 12),
+                            };
+                        }
+                        reactionRoot = reactionRoot.parentElement;
+                    }
+                }
+            }
+
+            return {
+                matched: false,
+                candidates: Array.from(new Set(candidates)).slice(0, 12),
+            };
+        }
+        """
+        try:
+            result = locator.evaluate(script, participantName)
+            if isinstance(result, dict):
+                candidates = result.get("candidates") or []
+                self.logger.debug(
+                    "reaction candidates participant=%s matched=%s values=%s",
+                    participantName,
+                    bool(result.get("matched")),
+                    candidates,
+                )
+                return bool(result.get("matched"))
+            return bool(result)
+        except Exception as exc:
+            self.logger.warning("Unable to inspect poll reactions: %s", exc)
+            return None
+
     def findPollCards(self, page) -> list:
         pollLocators: list = []
         seenKeys: set[str] = set()
@@ -35,12 +166,6 @@ class PollDiscovery:
             'span:has-text("View votes")',
             'text="View votes"',
         )
-        # selectors = (
-        #    '[data-testid="poll-view-votes"]',
-        #    'div[role="button"]:has-text("View votes")',
-        #    'span:has-text("View votes")',
-        #    'text="View votes"',
-        # )
 
         for selector in selectors:
             try:
@@ -299,11 +424,13 @@ class PollDiscovery:
             previousSiblingDates,
         )
 
+        # Prefer date evidence local to the poll message. The broad visual scan can
+        # contain unrelated date-like message text from WhatsApp's virtualised DOM.
         for key, values in (
-            ("visibleDateHeaders", visibleDateHeaders),
+            ("previousSiblingDates", previousSiblingDates),
             ("chatDateHeaders", chatDateHeaders),
             ("attributedDates", attributedDates),
-            ("previousSiblingDates", previousSiblingDates),
+            ("visibleDateHeaders", visibleDateHeaders),
         ):
             for value in values:
                 text = str(value or "").strip()
@@ -414,8 +541,6 @@ class PollDiscovery:
         """
         script = r"""
         (node) => {
-            // Capture unique text and key attributes from the nearest message container
-            // and its ancestors so skipped poll candidates leave useful diagnostics.
             const collected = [];
             const seen = new Set();
             const add = (value) => {

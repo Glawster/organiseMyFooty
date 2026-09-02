@@ -2,85 +2,40 @@
 
 Implement [requirement 002 — Cancelled sessions](../features/002-cancelledSessions.md).
 
-The requirement is authoritative. Read it completely before changing code, and
-also follow `AGENTS.md` and all repository instructions it references. Inspect
-the current parsing, session identity, persistence, reporting and test code
-before deciding where changes belong.
-
-## Working process
-
-1. Read `AGENTS.md` completely before planning or making changes.
-2. Read and apply every standards and repository-definition file referenced by
-   `AGENTS.md`, including `.github/agent-instructions.md`,
-   `.github/additional-instructions.md` when it exists, and
-   `.github/repositoryLayout.md`.
-3. Inspect `git status` and preserve any existing user changes. Do not overwrite
-   or discard unrelated work.
-4. Before development changes, create and switch to the requirement branch:
-   `feature/002-cancelledSessions`.
-5. Confirm the active branch before editing. If that branch already exists,
-   switch to it rather than creating a differently named branch.
-6. Keep all implementation, tests and documentation for this requirement on
-   that branch.
-7. Re-read the applicable standards before adding or moving repository content
-   or when an implementation decision affects architecture, naming, safety or
-   testing.
+The requirement is authoritative. Follow `AGENTS.md` and all referenced
+repository instructions, preserve existing user changes, and work on
+`feature/002-cancelledSessions`.
 
 ## Objective
 
-Recognise the case-insensitive `(cancelled)` marker in WhatsApp poll titles,
-preserve the original source title, retain the logical session as cancelled,
-and exclude it from attendance processing and totals.
+Treat exactly the configured WhatsApp participant's `😢` reaction on a poll as
+session cancellation. Configure and persist the participant with
+`--emoji NAME` in both CLI entry points.
 
 ## Required approach
 
-1. Locate the single domain boundary responsible for interpreting session
-   titles and status. Do not scatter cancellation checks through CLI, browser
-   and report code.
-2. Add an explicit session status representation suitable for both active and
-   cancelled sessions.
-3. Detect `(cancelled)` case-insensitively with appropriate whitespace and
-   placement tolerance while avoiding false positives.
-4. Preserve the source title exactly as captured. If a normalized title is
-   needed for matching or display, store or derive it separately.
-5. Reconcile an active session becoming cancelled as an update to the existing
-   logical session, not a new session. Likewise, restore the same session when
-   the marker is removed.
-6. Exclude cancelled sessions from attendance associations, member attendance
-   totals, session totals, attendance report columns and summaries.
-7. Keep cancelled sessions queryable and expose their cancelled status wherever
-   session metadata is intentionally displayed.
-8. Log cancellation and restoration with enough identity information to audit
-   the change.
-9. Respect multi-source provenance and conflict-resolution behaviour from
-   requirement 001. Do not let one source observation silently erase another.
-10. Update user and developer documentation describing cancelled-session
-    behaviour.
-
-## Implementation constraints
-
-- Keep parsing and status logic independent of Playwright and user interfaces.
-- Do not discard a session merely because it is cancelled.
-- Do not mutate or lose the original source title.
-- Do not count voters from cancelled sessions as attendees.
-- Avoid unrelated refactoring unless required for a safe implementation.
-- If requirement 001 is not yet implemented, design the change so the current
-  model remains functional and the status representation can migrate cleanly to
-  its persistent session model. State any temporary compatibility decisions.
+1. Keep reaction DOM inspection in WhatsApp discovery code and pass only a
+   domain cancellation status into parsing/persistence.
+2. Require exact emoji and participant-name matches; avoid partial names,
+   unrelated message text, other participants and other emojis.
+3. Preserve titles, votes and source evidence while excluding cancelled
+   sessions from effective attendance and reports.
+4. Reconcile reaction removal as restoration of the same logical session.
+5. Revisit captured polls in the selected month when recognition is enabled;
+   the captured-poll shortcut must not hide reaction changes.
+6. Persist the name safely in existing user state and expose it through
+   resolved configuration without storing it in the attendance database.
+7. Log relevant state changes without exposing attendance data in tests.
+8. Treat reaction inspection failure as unknown and preserve the last stored
+   state; never interpret an inspection error as reaction removal.
 
 ## Verification
 
-Add focused automated tests for all acceptance criteria, including marker case,
-position and whitespace, false positives, original-title preservation,
-active/cancelled transitions, identity stability, logging, report exclusion and
-multi-source conflict behaviour where supported.
+Test CLI parsing and state persistence, exact reaction matching, false
+positives, captured-poll rescans, cancellation/restoration, report exclusion
+and multi-source behavior. Run focused tests, the full suite, formatter, naming
+linter and `git diff --check`.
 
-Run the focused tests, complete test suite and applicable formatting/lint
-checks. Tests must not require a live WhatsApp session. Report the commands run
-and any checks that could not be executed.
-
-## Completion report
-
-Summarize the domain-model, parsing, reconciliation, reporting, logging,
-documentation and test changes. Explicitly show that cancellation does not
-duplicate or delete the logical session and does not affect attendance totals.
+Live WhatsApp validation is required to prove the participant and emoji are
+available together in accessible reaction metadata. Report it separately from
+automated tests.

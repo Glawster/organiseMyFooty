@@ -46,9 +46,6 @@ class PollDialog:
             return panel, text
 
         except Exception as headerError:
-            # Expanding "See all" re-renders some WhatsApp poll drawers and can
-            # temporarily remove the Poll details heading.  The vote summary is
-            # retained, so use it to recover the replacement panel.
             panel = self.findVisibleDialogCandidate(page)
             if panel is not None:
                 return panel, panel.inner_text(timeout=3000)
@@ -176,6 +173,93 @@ class PollDialog:
         except Exception:
             return fallback
 
+    def extractVoterPhoneMetadata(
+        self, dialog, voterNames: list[str]
+    ) -> dict[str, str]:
+        """Read phone numbers hidden in accessible metadata beside known voter names."""
+        if not dialog or not voterNames:
+            return {}
+
+        script = r"""
+        (panel, voterNames) => {
+            const phonePattern = /\+?\d[\d\s().-]{5,}\d/g;
+            const valuesFor = (root) => {
+                const values = [];
+                const add = (value) => {
+                    const text = (value || '').replace(/\s+/g, ' ').trim();
+                    if (text) values.push(text);
+                };
+                add(root?.getAttribute?.('aria-label'));
+                add(root?.getAttribute?.('title'));
+                add(root?.getAttribute?.('data-pre-plain-text'));
+                for (const item of root?.querySelectorAll?.(
+                    '[aria-label], [title], [data-pre-plain-text]'
+                ) || []) {
+                    add(item.getAttribute('aria-label'));
+                    add(item.getAttribute('title'));
+                    add(item.getAttribute('data-pre-plain-text'));
+                }
+                return values;
+            };
+            const result = {};
+            const all = Array.from(panel.querySelectorAll('*'));
+            for (const voterName of voterNames) {
+                const matches = all.filter((element) =>
+                    (element.textContent || '').trim() === voterName
+                );
+                for (const match of matches) {
+                    const roots = [];
+                    const row = match.closest(
+                        '[role="listitem"], [role="row"], [data-testid*="contact" i], [data-testid*="cell" i]'
+                    );
+                    if (row) roots.push(row);
+                    let node = match.parentElement;
+                    for (let depth = 0; node && depth < 3; depth += 1) {
+                        roots.push(node);
+                        node = node.parentElement;
+                    }
+                    let found = '';
+                    for (const root of roots) {
+                        const values = valuesFor(root);
+                        for (const value of values) {
+                            const candidates = value.match(phonePattern) || [];
+                            found = candidates.find((candidate) =>
+                                (candidate.match(/\d/g) || []).length >= 7
+                            ) || '';
+                            if (found) break;
+                        }
+                        if (found) break;
+                    }
+                    if (found) {
+                        result[voterName] = found;
+                        break;
+                    }
+                }
+            }
+            return result;
+        }
+        """
+        try:
+            values = dialog.evaluate(script, voterNames)
+        except Exception as exc:
+            self.logger.debug("unable to inspect voter phone metadata: %s", exc)
+            return {}
+
+        phones: dict[str, str] = {}
+        if not isinstance(values, dict):
+            return phones
+        for voterName, rawPhone in values.items():
+            digits = "".join(
+                character for character in str(rawPhone) if character.isdigit()
+            )
+            if len(digits) >= 7:
+                phones[str(voterName).casefold()] = digits
+        if phones:
+            self.logger.debug(
+                "hidden voter phone metadata found for: %s", sorted(phones)
+            )
+        return phones
+
     def expandAllVoters(self, panel, initialText: str = "") -> list[str]:
         """Return distinct panel snapshots while scrolling its virtual voter list."""
         dialogTexts = [initialText] if initialText.strip() else []
@@ -222,8 +306,6 @@ class PollDialog:
                                     "expanding voter option: %s", expandedOption
                                 )
                             panel.page.wait_for_timeout(750)
-                            # WhatsApp replaces the controls after one expansion;
-                            # re-resolve the panel before attempting another.
                             break
                     except Exception as exc:
                         self.logger.debug(
@@ -253,10 +335,7 @@ class PollDialog:
 
                 scrollResult = panel.evaluate(
                     """panel => {
-                        const candidates = [
-                            panel,
-                            ...panel.querySelectorAll('*'),
-                        ];
+                        const candidates = [panel, ...panel.querySelectorAll('*')];
                         const scrollables = candidates.filter(node => {
                             const style = window.getComputedStyle(node);
                             const overflow = `${style.overflow} ${style.overflowY}`;
@@ -268,10 +347,7 @@ class PollDialog:
                         }
                         const results = scrollables.map(scrollable => {
                             const before = scrollable.scrollTop;
-                            const step = Math.max(
-                                scrollable.clientHeight * 0.8,
-                                200
-                            );
+                            const step = Math.max(scrollable.clientHeight * 0.8, 200);
                             scrollable.scrollTop = Math.min(
                                 before + step,
                                 scrollable.scrollHeight - scrollable.clientHeight

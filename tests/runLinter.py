@@ -5,8 +5,7 @@
 import argparse
 import os
 
-from organiseMyProjects.fixMarkup import markupFix
-from organiseMyProjects.guiNamingLinter import lintFile, lintGuiNaming
+from guiNamingLinter import lintFile, lintGuiNaming
 
 
 def _lintTarget(target: str) -> None:
@@ -58,6 +57,12 @@ def main() -> None:
     # Markup mode is intentionally isolated so markdown checks can be run
     # without triggering Python GUI naming lint.
     if args.markup or args.fix_markup:
+        # Markup support is supplied by organiseMyProjects, but ordinary Python
+        # linting must remain runnable from a clean checkout without that package.
+        try:
+            from organiseMyProjects.fixMarkup import markupFix
+        except ImportError:
+            parser.error("markup linting requires the organiseMyProjects package")
         fixMode = bool(args.fix or args.fix_markup)
         markupExitCode = markupFix(
             targets=args.targets or None,

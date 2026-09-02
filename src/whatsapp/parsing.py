@@ -5,7 +5,6 @@ from typing import Iterable
 import re
 
 from attendanceConfig import RuntimeConfig
-from whatsapp.models import SessionStatus
 from whatsapp.selectors import WhatsAppSelectors
 
 WEEKDAY_MAP = {
@@ -19,7 +18,6 @@ WEEKDAY_MAP = {
 }
 
 SESSION_TITLE_PREFIX = r"(?:session\s+)?"
-CANCELLATION_MARKER = re.compile(r"\(\s*cancelled\s*\)", re.IGNORECASE)
 
 
 class PollTextParser:
@@ -119,8 +117,7 @@ class PollTextParser:
         if pollDateText:
             return f"{pollDateText}|{logicalTitle.casefold()}"
 
-        logicalSourceHint = CANCELLATION_MARKER.sub(" ", sourceHint)
-        logicalSourceHint = " ".join(logicalSourceHint.split())
+        logicalSourceHint = " ".join(sourceHint.split())
         return f"{logicalTitle.casefold()}|{logicalSourceHint[:80].casefold()}"
 
     def buildPollKeyFromSourceText(self, sourceText: str) -> tuple[str, str, str]:
@@ -135,19 +132,13 @@ class PollTextParser:
         return pollKey, pollTitle, pollDateText
 
     # ## title utilities
-    def extractSessionStatus(self, pollTitle: str) -> SessionStatus:
-        """Return the lifecycle state encoded by a captured poll title."""
-        if CANCELLATION_MARKER.search(pollTitle):
-            return SessionStatus.CANCELLED
-        return SessionStatus.SCHEDULED
-
     def extractSessionParts(self, pollTitle: str) -> tuple[str, str]:
         """
         Returns (timeText, venueText)
         Example: "Sunday 7pm LLC" -> ("19:00", "LLC")
         """
         match = re.match(
-            rf"^{SESSION_TITLE_PREFIX}(?P<day>\w+)\s+(?P<hour>\d{{1,2}})(?:[:\.](?P<min>\d{{2}}))?\s*(?P<ampm>am|pm)\s*(?P<venue>.*)$",
+            rf"^{SESSION_TITLE_PREFIX}(?P<day>\w+)\s+(?:@\s*)?(?P<hour>\d{{1,2}})(?:[:\.](?P<min>\d{{2}}))?\s*(?P<ampm>am|pm)\s*(?P<venue>.*)$",
             self.normaliseSessionTitle(pollTitle),
             re.IGNORECASE,
         )
@@ -261,8 +252,8 @@ class PollTextParser:
         )
 
     def normaliseSessionTitle(self, pollTitle: str) -> str:
-        """Remove status syntax from logical identity without mutating source data."""
-        return " ".join(CANCELLATION_MARKER.sub(" ", pollTitle).split())
+        """Normalize whitespace without mutating captured source data."""
+        return " ".join(pollTitle.split())
 
     # ## voter utilities
     def cleanVoterNames(self, names: list[str]) -> list[str]:

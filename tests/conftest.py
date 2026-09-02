@@ -13,71 +13,71 @@ class _FakeStructuredLogger:
         self.kwargs = kwargs
         self.messages: list[tuple[str, tuple, dict]] = []
 
-    def _record(self, level: str, *args, **kwargs):
+    def _recordLog(self, level: str, *args, **kwargs):
         self.messages.append((level, args, kwargs))
 
     def info(self, *args, **kwargs):
-        self._record("info", *args, **kwargs)
+        self._recordLog("info", *args, **kwargs)
 
     def warning(self, *args, **kwargs):
-        self._record("warning", *args, **kwargs)
+        self._recordLog("warning", *args, **kwargs)
 
     def debug(self, *args, **kwargs):
-        self._record("debug", *args, **kwargs)
+        self._recordLog("debug", *args, **kwargs)
 
     def error(self, *args, **kwargs):
-        self._record("error", *args, **kwargs)
+        self._recordLog("error", *args, **kwargs)
 
     def action(self, *args, **kwargs):
-        self._record("action", *args, **kwargs)
+        self._recordLog("action", *args, **kwargs)
 
     def doing(self, *args, **kwargs):
-        self._record("doing", *args, **kwargs)
+        self._recordLog("doing", *args, **kwargs)
 
     def done(self, *args, **kwargs):
-        self._record("done", *args, **kwargs)
+        self._recordLog("done", *args, **kwargs)
 
     def value(self, *args, **kwargs):
-        self._record("value", *args, **kwargs)
+        self._recordLog("value", *args, **kwargs)
 
-    def has_message(self, level: str, message: str) -> bool:
+    def hasMessage(self, level: str, message: str) -> bool:
         return any(
-            entry_level == level and message in args[0]
-            for entry_level, args, _kwargs in self.messages
+            entryLevel == level and message in args[0]
+            for entryLevel, args, _kwargs in self.messages
             if args and isinstance(args[0], str)
         )
 
-    def has_call(self, level: str, message: str, *call_args) -> bool:
+    def hasCall(self, level: str, message: str, *callArgs) -> bool:
         return any(
-            entry_level == level and args == (message, *call_args)
-            for entry_level, args, _kwargs in self.messages
+            entryLevel == level and args == (message, *callArgs)
+            for entryLevel, args, _kwargs in self.messages
         )
 
 
-def _fake_get_logger(name: str = "test.logger", **kwargs):
+def _fakeGetLogger(name: str = "test.logger", **kwargs):
     """Return a stub logger matching the organiseMyProjects.logUtils factory."""
     return _FakeStructuredLogger(name, **kwargs)
 
 
-def _fake_draw_box(*_args, **_kwargs):
+def _fakeDrawBox(*_args, **_kwargs):
     """Ignore drawBox output in unit tests."""
     return None
 
 
-def _fake_set_application(*_args, **_kwargs):
+def _fakeSetApplication(*_args, **_kwargs):
     """Ignore application logger setup in unit tests."""
     return None
 
 
-_stubbed_organiseMyProjects = types.ModuleType("organiseMyProjects")
-_stubbed_logUtils = types.ModuleType("organiseMyProjects.logUtils")
-setattr(_stubbed_logUtils, "getLogger", _fake_get_logger)
-setattr(_stubbed_logUtils, "drawBox", _fake_draw_box)
-setattr(_stubbed_logUtils, "setApplication", _fake_set_application)
-setattr(_stubbed_organiseMyProjects, "logUtils", _stubbed_logUtils)
-sys.modules.setdefault("organiseMyProjects", _stubbed_organiseMyProjects)
-sys.modules.setdefault("organiseMyProjects.logUtils", _stubbed_logUtils)
+_stubbedOrganiseMyProjects = types.ModuleType("organiseMyProjects")
+_stubbedLogUtils = types.ModuleType("organiseMyProjects.logUtils")
+setattr(_stubbedLogUtils, "getLogger", _fakeGetLogger)
+setattr(_stubbedLogUtils, "drawBox", _fakeDrawBox)
+setattr(_stubbedLogUtils, "setApplication", _fakeSetApplication)
+setattr(_stubbedOrganiseMyProjects, "logUtils", _stubbedLogUtils)
+sys.modules.setdefault("organiseMyProjects", _stubbedOrganiseMyProjects)
+sys.modules.setdefault("organiseMyProjects.logUtils", _stubbedLogUtils)
 
-_repo_root = Path(__file__).parent.parent
-sys.path.insert(0, str(_repo_root))
-sys.path.insert(0, str(_repo_root / "src"))
+_repoRoot = Path(__file__).parent.parent
+sys.path.insert(0, str(_repoRoot))
+sys.path.insert(0, str(_repoRoot / "src"))
