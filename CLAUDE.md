@@ -1,5 +1,5 @@
 <!-- deployed from Glawster/organiseMyProjects release 0.5 -- do not edit directly -->
-# Agent instructions
+# Agent Instructions
 
 Read and follow `.github/agent-instructions.md`.
 

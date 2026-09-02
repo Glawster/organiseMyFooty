@@ -1,31 +1,24 @@
 # organiseMyFooty
 
-Python tool for exporting WhatsApp poll attendance from WhatsApp Web.
-
-The supported runtime is Python 3.12.
-
-Automates collection of footy training/match poll responses from a WhatsApp group,
-exporting voter names and attendance counts to CSV files.
+Python 3.12 command-line application which collects attendance responses from
+WhatsApp Web polls, persists them in SQLite, and writes CSV, JSON and text
+reports.
 
 ## Documentation
 
-- [Project records](project/README.md)
-- [Copilot instructions](.github/copilot-instructions.md)
-- [Project-specific instructions](.github/additional-instructions.md)
-- [Repository layout](.github/repositoryLayout.md)
-- [Requirements management](.github/requirementsManagement.md)
+This file is the documentation entry point. Living guides:
+
+- [Repository layout](documentation/repositoryLayout.md)
+- [Requirements management](documentation/requirementsManagement.md)
+- [Testing process](documentation/testingProcess.md)
+- [Release process](documentation/howToRelease.md)
 - [Persistent attendance store](documentation/persistentAttendanceStore/README.md)
 - [Cancelled sessions](documentation/cancelledSessions/README.md)
-
-## Source files
-
-- `main.py` — standalone compatibility entry point
-- `src/organiseMyFooty/cli.py` — installed CLI entry point
-- `src/whatsapp/exporter.py` — collection and report orchestration
-- `src/whatsapp/scraper.py` — WhatsApp browser collection workflow
-- `src/whatsapp/store.py` — SQLite schema, reconciliation and queries
-- `src/attendanceConfig.py` — config helpers and month/date resolution
-- `src/whatsapp/selectors.py` — centralised WhatsApp Web selectors
+- [Project records](project/README.md)
+- [Requirements index](project/requirements/README.md)
+- [Agent instructions](.github/agent-instructions.md)
+- [Project-specific instructions](.github/additional-instructions.md)
+- [Copilot instructions](.github/copilot-instructions.md)
 
 ## Install
 
@@ -37,85 +30,34 @@ conda activate organise-my-footy
 playwright install chromium
 ```
 
-Alternatively, use a virtual environment:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
-playwright install chromium
-```
-
-This project expects `organiseMyProjects.logUtils` to be available in the same
+This project expects `organiseMyFooty.logUtils` to be available in the same
 Python environment for centralized logging.
 
-## Development checks
-
-Run the automated checks from the `py312` Conda environment:
-
-```bash
-conda run -n py312 pytest -q
-conda run -n py312 black --check main.py src tests
-conda run -n py312 ruff check main.py src tests
-conda run -n py312 python tests/runLinter.py
-git diff --check
-```
-
-## First-run login
-
-On the very first run the browser profile is empty, so WhatsApp Web will show
-a QR-code login screen inside the Playwright-controlled browser window.
-
-1. Run without `--headless` (the default) so the browser window is visible.
-2. Open WhatsApp on your phone → **Linked devices** → **Link a device**.
-3. Scan the QR code shown in the browser window.
-4. Wait for your chats to load, then the tool will continue automatically.
-
-The session is persisted in `--user-data-dir`, so you only need to do this
-once. If the default 120-second window is not enough to scan the code, pass
-a longer timeout:
-
-```bash
-python main.py --group "My Footy Group" --month 2026-03
-```
+A live collection run needs Playwright's Chromium browser. Unit and integration
+tests must not.
 
 ## Usage
 
-Run from the `src/` directory (or add `src/` to `PYTHONPATH`):
-
-```bash
-python main.py \
-  --group "My Footy Group" \
-  --month 2026-03
-```
-
-You can also run it as a module from the repository root:
-
-```bash
-python -m organiseMyFooty \
-  --group "My Footy Group" \
-  --month 2026-03
-```
-
-Or run the installed console script:
-
-```bash
-organiseMyFooty \
-  --group "My Footy Group" \
-  --month 2026-03
-```
-
-For a safe first run (inspect without writing files — default behaviour):
+Run from the repository root. All three entry points must stay behaviourally
+aligned:
 
 ```bash
 python main.py --group "My Footy Group" --month 2026-03
+python -m organiseMyFooty --group "My Footy Group" --month 2026-03
+organiseMyFooty --group "My Footy Group" --month 2026-03
 ```
 
-Groups used in successful runs accumulate in
+Omit `--confirm` for a dry-run. The browser may open and polls may be inspected,
+but reports are not written. Pass `--confirm` to persist attendance and write
+exports:
+
+```bash
+python main.py --group "My Footy Group" --month 2026-03 --confirm
+```
+
+Groups from successful runs accumulate in
 `~/.config/organiseMyFooty/state.json`. Run without `--group` to scan every
-configured group, or provide `--group` to scan only the named group for that
-run. Repeat `--group` to scan a selected set:
+configured group. Repeat `--group` to scan a selected set:
 
 ```bash
 python main.py \
@@ -124,54 +66,112 @@ python main.py \
   --month 2026-03
 ```
 
-To actually write the CSV exports, add `--confirm`:
+Inspect stored attendance for the selected month without scanning:
 
 ```bash
-python main.py --group "My Footy Group" --month 2026-03 --confirm
+python main.py --group "My Footy Group" --month 2026-03 --view
 ```
+
+Print the resolved runtime configuration and exit:
+
+```bash
+python main.py --group "My Footy Group" --month 2026-03 --config
+```
+
+Use `--help` at the entry point for the current options.
 
 ## CLI options
 
 | Option | Description |
-|---|---|
+| --- | --- |
 | `--group` | Exact WhatsApp group name; repeat to select multiple groups; omit to scan all configured groups |
-| `--month` | Target month in `YYYY-MM` format (default: previous month) |
-| `--output` | Output directory for CSV files |
-| `--user-data-dir` | Persistent browser profile directory |
-| `--timeout-ms` | Selector/action timeout in ms (default: 15000) |
-| `--limit-polls` | Limit number of polls processed (for testing) |
-| `--browser-channel` | Playwright browser channel, e.g. `chrome` |
-| `--include-no-votes` | Also collect "No" voters |
-| `--poll-title-filter` | Only process polls whose text contains this substring |
-| `--headless` | Run browser without showing a window |
-| `--confirm` | Write CSV exports; omit to run in safe dry-run mode (default) |
+| `--month` | Target month as `YYYY-MM`, a month name, or a number; defaults to the previous calendar month |
+| `--confirm` | Write the attendance store and reports; omit to run in dry-run mode |
 | `--override` | Continue past captured polls to the start of the month two calendar months ago |
-| `--scan-since YYYY-MM-DD` | Replace the override horizon with an inclusive local date; requires `--override` |
+| `--scan-since YYYY-MM-DD` | Inclusive history cutoff; requires `--override` |
 | `--view` | Inspect stored attendance for the selected month without browser scanning |
+| `--config` | Print the resolved runtime configuration and exit |
+| `--debug` | Enable debug logging |
 
-Polls are always filtered to sessions whose derived session date falls inside the selected month window.
-The SQLite attendance store is loaded automatically; no cache opt-in is required.
+Polls are filtered to sessions whose derived session date falls inside the
+selected month window. The SQLite attendance store is opened by default; there
+is no cache opt-in flag.
 
-## Output files
+`--override` continues past previously captured polls but stops at the start of
+the month two calendar months before the current local month.
+`--override --scan-since YYYY-MM-DD` replaces that horizon with an inclusive
+date. A future or invalid date, or `--scan-since` without `--override`, is
+rejected before the browser starts.
 
-| File | Description |
-|---|---|
-| `attendanceSummary.csv` | Aggregated summary: `name`, `yesCount`, `noCount`, `totalVotes`, `pollsResponded` |
-| `attendanceReport.csv` | Session-by-session matrix used for month attendance reporting |
-| `socialMediaSummary.txt` | Paste-ready monthly attendance summary generated from `attendanceReport.csv` |
-| `exportPreview.json` | JSON preview of both datasets for quick inspection |
+## Output
 
-## Development
+Generated files belong under the repository-level `output/` directory.
+
+| Path | Description |
+| --- | --- |
+| `output/attendance.sqlite3` | Durable attendance store |
+| `output/attendanceSummary-YYYY-MM.csv` | Aggregated summary: `name`, `yesCount`, `noCount`, `totalVotes`, `pollsResponded` |
+| `output/attendanceReport-YYYY-MM.csv` | Session-by-session matrix for the selected month |
+| `output/socialMediaSummary-YYYY-MM.txt` | Paste-ready monthly attendance summary |
+| `output/exportPreview-YYYY-MM.json` | JSON preview of the report datasets |
+
+SQLite databases, WAL/SHM files, browser profiles, generated reports, logs and
+real attendance data must not be committed. Log files can contain member display
+names and should be treated as personal data.
+
+## First-run login
+
+The Playwright browser profile is empty on the first run, so WhatsApp Web shows
+a QR-code login screen. The collection browser is shown, not headless.
+
+1. Start a collection run so the browser window is visible.
+2. Open WhatsApp on your phone → **Linked devices** → **Link a device**.
+3. Scan the QR code shown in the browser window.
+4. Wait for chats to load; the tool continues automatically.
+
+The session is stored in
+`~/.local/share/organiseMyWhatsApp/profile`. Login is only required again if
+that profile is removed.
+
+## Source layout
+
+- `main.py` — standalone compatibility entry point
+- `src/organiseMyFooty/cli.py` — installed `organiseMyFooty` console entry point
+- `src/attendanceConfig.py` — runtime configuration and date-window logic
+- `src/whatsapp/exporter.py` — collection and report orchestration
+- `src/whatsapp/scraper.py` — WhatsApp browser collection workflow
+- `src/whatsapp/store.py` — SQLite schema, reconciliation and queries
+- `src/whatsapp/selectors.py` — centralised WhatsApp Web selectors
+
+`src/whatsapp/store.py` is the only module that may issue attendance-store SQL
+or own schema migrations. Core persistence, parsing, reconciliation and
+reporting remain testable without Playwright.
+
+## Development checks
+
+Activate the Conda environment, then run focused tests while developing,
+followed by:
 
 ```bash
-pip install -r dev-requirements.txt
-pytest
-black src/ tests/
+pytest -q
+black --check main.py src tests
+python tests/runLinter.py
+git diff --check
 ```
+
+The naming linter may report legacy diagnostics in existing files even when it
+exits successfully. Do not introduce new diagnostics in changed code.
+
+Tests must use `tmp_path` for database, filesystem and migration work and must
+not write to the real `output/`, user configuration, browser profile or log
+directories. Live-browser checks are manual.
 
 ## Notes
 
-- Uses WhatsApp Web browser automation; CSS selectors in `whatsappSelectors.py` may need
+- WhatsApp Web selectors live in `src/whatsapp/selectors.py` and may need
   updating if WhatsApp changes its UI.
-- Reuses a persistent browser profile so you only need to log in once.
-- Without `--confirm`, the tool runs in dry-run mode and writes no output files.
+- Cancelled session polls are recognised from `(cancelled)` in the poll title
+  and are excluded from attendance totals; see
+  [Cancelled sessions](documentation/cancelledSessions/README.md).
+- Attendance backup and scan-boundary behaviour are described in
+  [Persistent attendance store](documentation/persistentAttendanceStore/README.md).

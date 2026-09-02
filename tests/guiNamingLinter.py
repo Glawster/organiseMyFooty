@@ -1,9 +1,9 @@
-# deployed from Glawster/organiseMyProjects release 0.3 -- do not edit directly
+# deployed from Glawster/organiseMyProjects release 0.5 -- do not edit directly
 """
 guiNamingLinter.py - GUI Code Quality Linter
 
 This linter enforces project-specific guidelines for Python GUI development:
-- Function formatting (blank line after def if >4 statements)
+- Module-level function spacing
 - Widget naming conventions (Tkinter and Qt/PySide6)
 - Constant and variable naming rules
 - Logging message formatting
@@ -20,15 +20,21 @@ import re
 DOMAIN_ACTION_PATTERN = r"^_?[a-z]+[A-Z][a-zA-Z0-9]*$"
 
 FUNCTION_NAME_EXCEPTIONS = {
-    "__init__",
-    "__repr__",
-    "__str__",
     "main",
     # AST visitor callback names must match ast.NodeVisitor conventions.
     "visit_Assign",
     "visit_ClassDef",
     "visit_Expr",
     "visit_FunctionDef",
+    "visit_AsyncFunctionDef",
+}
+
+# These names are contracts imposed by Python or a framework. Renaming an
+# override to satisfy a project convention would break polymorphic dispatch.
+FRAMEWORK_METHOD_EXCEPTIONS = {
+    "clear",  # Qt widget override
+    "emit",  # logging.Handler
+    "process",  # logging.LoggerAdapter
 }
 
 LOGGING_METHODS = {
@@ -38,6 +44,7 @@ LOGGING_METHODS = {
     "done",
     "error",
     "info",
+    "multiline",
     "value",
     "warning",
 }
@@ -54,7 +61,7 @@ NAMING_RULES = {
     "Combobox": r"^cmb[A-Z]\w+",
     "Handler": r"^on[A-Z]\w+",
     "Constant": r"^[A-Z_]+$",
-    "Class": r"^[A-Z][a-zA-Z0-9]*$",
+    "Class": r"^_?[A-Z][a-zA-Z0-9]*$",
 }
 
 QT_WIDGET_TYPES = {
@@ -147,9 +154,15 @@ class GuiNamingVisitor(ast.NodeVisitor):
 
     ## lifecycle
 
-    def __init__(self, lines: list[str], framework: str | None = None):
+    def __init__(
+        self,
+        lines: list[str],
+        framework: str | None = None,
+        isTestFile: bool = False,
+    ):
         self.lines = lines
         self.framework = framework
+        self.isTestFile = isTestFile
         self.violations = []
         self.packCalls = 0
         self.gridCalls = 0
@@ -175,6 +188,10 @@ class GuiNamingVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ClassDef(self, node):
+        if self.isTestFile and re.match(r"^_[A-Z][a-zA-Z0-9]*$", node.name):
+            self.generic_visit(node)
+            return
+
         isExplicitlyAllowed = node.name in CLASS_NAME_EXCEPTIONS
         isPatternAllowed = any(
             re.match(pattern, node.name) for pattern in CLASS_NAME_PATTERNS
@@ -197,11 +214,15 @@ class GuiNamingVisitor(ast.NodeVisitor):
         self.functionCheckSpacing(node)
         self.generic_visit(node)
 
+    def visit_AsyncFunctionDef(self, node):
+        """Apply function rules consistently to asynchronous functions."""
+        self.visit_FunctionDef(node)
+
     ## function
 
     def functionCheckName(self, node) -> None:
         """Check function names use the domainAction pattern."""
-        if node.name in FUNCTION_NAME_EXCEPTIONS:
+        if self.functionIsNamingExempt(node):
             return
 
         if not re.match(DOMAIN_ACTION_PATTERN, node.name):
@@ -209,28 +230,70 @@ class GuiNamingVisitor(ast.NodeVisitor):
                 (node.name, "Function name (domainAction)", node.lineno)
             )
 
+    def functionIsNamingExempt(self, node) -> bool:
+        """Return whether Python, a framework, or pytest owns the function name."""
+        if node.name.startswith("__") and node.name.endswith("__"):
+            return True
+
+        if node.name in FUNCTION_NAME_EXCEPTIONS:
+            return True
+
+        if any(
+            isinstance(item, ast.Name) and item.id == "property"
+            for item in node.decorator_list
+        ):
+            return True
+
+        if isinstance(getattr(node, "parent", None), ast.ClassDef):
+            if node.name in LOGGING_METHODS:
+                return True
+            if node.name in FRAMEWORK_METHOD_EXCEPTIONS:
+                return True
+
+        if not self.isTestFile:
+            return False
+
+        # Pytest fixture names are dependency-injection keys and commonly use
+        # snake_case. Decorators may be @fixture, @pytest.fixture, or calls of
+        # either form.
+        if any(self.functionDecoratorIsFixture(item) for item in node.decorator_list):
+            return True
+
+        # Private helpers and non-test module helpers in test modules follow
+        # normal Python helper conventions rather than production domainAction.
+        if node.name.startswith("_"):
+            return True
+        if isinstance(getattr(node, "parent", None), ast.Module):
+            return not node.name.startswith("test")
+
+        return False
+
+    def functionDecoratorIsFixture(self, decorator) -> bool:
+        """Recognize common pytest fixture decorator forms."""
+        if isinstance(decorator, ast.Call):
+            decorator = decorator.func
+        if isinstance(decorator, ast.Name):
+            return decorator.id == "fixture"
+        if isinstance(decorator, ast.Attribute):
+            return decorator.attr == "fixture"
+        return False
+
     def functionCheckSpacing(self, node) -> None:
-        """Check for a blank line immediately after the def line."""
-        if len(node.body) <= 4 or node.lineno >= len(self.lines):
+        """Check that module-level functions have two preceding blank lines."""
+        if not isinstance(getattr(node, "parent", None), ast.Module):
             return
 
-        firstStatement = node.body[0]
-        isDocstring = (
-            isinstance(firstStatement, ast.Expr)
-            and isinstance(firstStatement.value, ast.Constant)
-            and isinstance(firstStatement.value.value, str)
-        )
-
-        # PEP 257 requires docstrings immediately after def, so skip those.
-        if isDocstring:
+        startLine = min([node.lineno, *(item.lineno for item in node.decorator_list)])
+        if startLine <= 1:
             return
 
-        lineAfterDef = self.lines[node.lineno].strip()
-        if lineAfterDef:
+        precedingLines = self.lines[max(0, startLine - 3) : startLine - 1]
+        blankLineCount = sum(not line.strip() for line in precedingLines)
+        if blankLineCount < 2:
             self.violations.append(
                 (
                     node.name,
-                    "Function spacing (missing blank line after def)",
+                    "Function spacing (two blank lines before top-level def)",
                     node.lineno,
                 )
             )
@@ -254,9 +317,7 @@ class GuiNamingVisitor(ast.NodeVisitor):
             self.gridCalls += 1
             return
 
-        isLoggerCall = (
-            isinstance(func.value, ast.Name) and func.value.id == "logger"
-        ) or (isinstance(func.value, ast.Attribute) and func.value.attr == "logger")
+        isLoggerCall = isinstance(func.value, ast.Name) and func.value.id == "logger"
 
         if not isLoggerCall:
             return
@@ -448,7 +509,11 @@ def fileCheck(filepath: str) -> list[tuple[str, str, int]]:
     tree = ast.parse(text, filename=filepath)
     astAnnotateParents(tree)
 
-    visitor = GuiNamingVisitor(lines, framework=framework)
+    filename = os.path.basename(filepath)
+    isTestFile = filename.startswith("test_") or "tests" in os.path.normpath(
+        filepath
+    ).split(os.sep)
+    visitor = GuiNamingVisitor(lines, framework=framework, isTestFile=isTestFile)
     visitor.violations.extend(testFileCheck(filepath))
 
     visitor.visit(tree)
@@ -468,11 +533,11 @@ def testFileCheck(filepath: str) -> list[tuple[str, str, int]]:
 
     if filename.startswith("test_"):
         namePart = filename[5:].split(".")[0]
-        if not re.match(r"[A-Z]\w*$", namePart):
+        if not re.fullmatch(r"[a-z][A-Za-z0-9]*", namePart):
             return [
                 (
                     filename,
-                    "Test file naming (test_[A-Z]*)",
+                    "Test file naming (test_camelCaseName.py)",
                     0,
                 )
             ]
@@ -500,7 +565,20 @@ def lintGuiNaming(directory: str) -> None:
     """Lint all Python files below a directory."""
     print(f"\nChecking GUI naming in: {directory}\n" + "-" * 50)
 
-    for root, _, files in os.walk(directory):
+    ignoredDirectories = {
+        ".git",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".venv",
+        "__pycache__",
+        "build",
+        "dist",
+        "output",
+    }
+    for root, directories, files in os.walk(directory):
+        directories[:] = [
+            item for item in directories if item not in ignoredDirectories
+        ]
         for filename in files:
             if filename.endswith(".py"):
                 path = os.path.join(root, filename)
